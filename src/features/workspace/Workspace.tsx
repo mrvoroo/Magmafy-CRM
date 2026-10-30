@@ -61,16 +61,19 @@ export function Workspace() {
   const lostPrev = boot.leads.filter((l) => inMonth(lostAt(l), prevMonthStart, monthStart)).length;
   const openPrev = boot.leads.filter((l) => ACTIVE.includes(l.stage) && dayKey(l.created) < monthStart).length;
 
-  /* ---------- New Leads (FR-12) ---------- */
+  /* ---------- New Leads (FR-12) ----------
+     Everyone who arrived in the last 14 days, whatever stage they've reached since (a form booking lands
+     straight on «اجتماع محجوز»), except the ones we already lost. */
+  const isFresh = (l: Lead) => l.stage !== 'خسرناه' && Date.now() - Date.parse(l.created) < 14 * DAY;
   const fresh = useMemo(() => {
     const s = leadQ.trim().toLowerCase();
     return boot.leads
-      .filter((l) => ['جديد', 'تم التواصل'].includes(l.stage) && Date.now() - Date.parse(l.created) < 14 * DAY)
+      .filter(isFresh)
       .filter((l) => leadF === 'all' || interest(l).key === leadF)
       .filter((l) => !s || [l.business, l.name, l.city, l.phone].some((x) => x.toLowerCase().includes(s)))
       .sort((a, b) => ({ 'عالية': 0, 'متوسطة': 1, 'منخفضة': 2 }[a.priority] ?? 3) - ({ 'عالية': 0, 'متوسطة': 1, 'منخفضة': 2 }[b.priority] ?? 3) || Date.parse(b.created) - Date.parse(a.created));
   }, [boot.leads, leadF, leadQ]);
-  const freshAll = boot.leads.filter((l) => ['جديد', 'تم التواصل'].includes(l.stage) && Date.now() - Date.parse(l.created) < 14 * DAY);
+  const freshAll = boot.leads.filter(isFresh);
 
   /* ---------- Day's tasks (FR-13) ---------- */
   const leadsById = useMemo(() => new Map(boot.leads.map((l) => [l.id, l])), [boot.leads]);
