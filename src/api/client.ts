@@ -2,16 +2,18 @@ import type { ZodTypeAny, z } from 'zod';
 import { config } from '../config';
 import { store } from '../lib/storage';
 import { ApiError } from './errors';
+import { shareSession } from '../lib/push';
 
 const TOKEN_KEY = 'mg-crm-token';
 let token = store.get(TOKEN_KEY) || '';
+shareSession(token);
 const authListeners = new Set<() => void>();
 
 export const session = {
   get token() { return token; },
-  set(t: string) { token = t; store.set(TOKEN_KEY, t); },
+  set(t: string) { token = t; store.set(TOKEN_KEY, t); shareSession(t); },
   // Signing out also forgets the offline copy of the data (see useBootstrap).
-  clear() { token = ''; store.del(TOKEN_KEY); store.del('mg-crm-offline'); },
+  clear() { token = ''; store.del(TOKEN_KEY); store.del('mg-crm-offline'); shareSession(''); },
   onLost(fn: () => void) { authListeners.add(fn); return () => { authListeners.delete(fn); }; }
 };
 

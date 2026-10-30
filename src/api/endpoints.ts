@@ -58,5 +58,11 @@ export const api = {
     call('crmFileTicket', [q], z.object({ url: z.string(), ticket: z.string(), maxBytes: z.number().optional() })),
   attachFile: (receipt: string) => call('crmAttachFile', [receipt], z.object({ ok: z.boolean(), file: S.FileSchema })),
   deleteFile: (id: string) => call('crmDeleteFile', [id], z.object({ ok: z.boolean(), trash: z.object({ url: z.string(), ticket: z.string() }).nullable().optional() })),
-  saveMyPrefs: (p: { emailOff: string[] }) => call('crmSaveMyPrefs', [p], z.object({ ok: z.boolean(), emailOff: z.array(z.string()) }))
+  saveMyPrefs: (p: { emailOff?: string[]; pushOff?: string[] }) =>
+    call('crmSaveMyPrefs', [p], z.object({ ok: z.boolean(), emailOff: z.array(z.string()), pushOff: z.array(z.string()).optional() })),
+
+  /* ---------- push notifications ---------- */
+  pushSubscribe: (sub: { endpoint: string; device: string }) => call('crmPushSubscribe', [sub], z.object({ ok: z.boolean(), devices: z.number() })),
+  pushUnsubscribe: (endpoint: string) => call('crmPushUnsubscribe', [endpoint], ok),
+  pushTest: (endpoint: string) => call('crmPushTest', [endpoint], z.object({ ok: z.boolean(), sent: z.number() }))
 };

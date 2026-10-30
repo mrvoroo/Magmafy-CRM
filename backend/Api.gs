@@ -25,9 +25,11 @@ function crmGateway_(body) {
     else if (fn === 'crmRequestAccess') data = crmRequestAccess(args[0]);
     else data = crmCall(body.token, fn, args);
     try { flushInstantMail_(); } catch (err) { logError_('mail:flush', err, {}); }
+    try { flushPush_(); } catch (err) { logError_('push:flush', err, {}); }
     return { ok: true, data: data };
   } catch (err) {
     MAIL_NOW_ = [];
+    PUSH_NOW_ = {};
     const msg = String((err && err.message) || err);
     if (msg === 'SESSION_EXPIRED') return { ok: false, code: 'SESSION_EXPIRED', error: 'الجلسة خلصت، سجّل دخول تاني' };
     if (msg === 'unknown_function') return { ok: false, code: 'UNKNOWN_FUNCTION', error: 'unknown_function' };
@@ -51,7 +53,8 @@ function crmApi_() {
     crmAnnouncementStats: crmAnnouncementStats, crmRemindAnnouncement: crmRemindAnnouncement,
     crmThreads: crmThreads, crmThread: crmThread, crmSendMessage: crmSendMessage, crmEditMessage: crmEditMessage,
     crmSaveThread: crmSaveThread, crmAccessRequests: crmAccessRequests, crmHandleAccess: crmHandleAccess, crmAudit: crmAudit,
-    crmFileTicket: crmFileTicket, crmAttachFile: crmAttachFile, crmDeleteFile: crmDeleteFile, crmSaveMyPrefs: crmSaveMyPrefs
+    crmFileTicket: crmFileTicket, crmAttachFile: crmAttachFile, crmDeleteFile: crmDeleteFile, crmSaveMyPrefs: crmSaveMyPrefs,
+    crmPushSubscribe: crmPushSubscribe, crmPushUnsubscribe: crmPushUnsubscribe, crmPushTest: crmPushTest, crmPushPull: crmPushPull
   };
 }
 
@@ -123,6 +126,8 @@ function notify_(emails, n, except) {
   try {
     const t = table_('NOTIFICATIONS');
     const seen = {};
+    const team = {};
+    table_('TEAM').rows.forEach((r) => { team[String(r.email).toLowerCase()] = r; });
     except = String(except || '').toLowerCase();
     (emails || []).forEach((e) => {
       e = String(e || '').trim().toLowerCase();
@@ -131,6 +136,7 @@ function notify_(emails, n, except) {
       t.append({ id: seqId_('N', 5), date: new Date(), toEmail: e, kind: n.kind, title: String(n.title || '').slice(0, 200), refType: n.refType || '', refId: n.refId || '', by: n.by || '', readAt: '', emailedAt: '' });
       bump_(e);
       queueInstantMail_(e, n);
+      queuePush_(e, n, team[e]);
     });
   } catch (err) { logError_('notify', err, { kind: n && n.kind }); }
 }
@@ -154,6 +160,7 @@ function notifyNewBooking_(lead, booking) {
     auditLog_({ email: '', name: 'الموقع' }, 'الموقع', 'إنشاء', 'اجتماع', booking.id, null, booking);
   });
   flushInstantMail_();
+  try { flushPush_(); } catch (err) { logError_('push:flush', err, {}); }
 }
 
 /** Called by handleEdit_ (Code.gs): records a hand edit in the sheet. */
@@ -1005,18 +1012,243 @@ function ensureDigestTrigger_() {
   if (!has) ScriptApp.newTrigger('emailDigest').timeBased().everyMinutes(5).create();
 }
 
-/** The signed-in person's own email preferences. */
+/** The signed-in person's own notification preferences (email and push). Only the fields sent are changed. */
 function crmSaveMyPrefs(p) {
   const me = requireUser_();
   p = p || {};
-  const off = splitList_(p.emailOff).filter((k) => EMAIL_KINDS.indexOf(k) >= 0);
+  const pick = (v) => splitList_(v).filter((k) => EMAIL_KINDS.indexOf(k) >= 0).join(', ');
   return withLock_(() => {
     const t = table_('TEAM');
     const row = t.rows.filter((r) => String(r.email).toLowerCase() === me.email)[0];
     if (!row) throw new Error('غير مصرح لك بدخول الـ CRM');
-    const before = { emailOff: str_(row.emailOff) };
-    t.update(row._row, { emailOff: off.join(', ') });
-    auditLog_(me, 'CRM', 'تعديل', 'عضو', me.email, before, { emailOff: off.join(', ') });
-    return { ok: true, emailOff: off };
+    const before = { emailOff: str_(row.emailOff), pushOff: str_(row.pushOff) };
+    const after = Object.assign({}, before);
+    if ('emailOff' in p) after.emailOff = pick(p.emailOff);
+    if ('pushOff' in p) after.pushOff = pick(p.pushOff);
+    t.update(row._row, after);
+    auditLog_(me, 'CRM', 'تعديل', 'عضو', me.email, before, after);
+    return { ok: true, emailOff: splitList_(after.emailOff), pushOff: splitList_(after.pushOff) };
   });
+}
+
+/* =========================================================================
+ * 12. Push notifications (phones and computers)
+ *
+ * Standard Web Push with VAPID, no extra service. The push itself carries no data: it only wakes the
+ * app's service worker, which then asks crmPushPull for what is new and shows it. That keeps every
+ * message off the push servers and needs no payload encryption, only the ES256 signature below.
+ * Keys are made once and kept in Script Properties (VAPID_D private, VAPID_PUB public).
+ * Each person can mute kinds (TEAM column «إيقاف تنبيهات الموبايل»); urgent announcements always ring.
+ * ========================================================================= */
+
+let PUSH_NOW_ = {}; // email → true: people to wake at the end of this request
+const PUSH_HOSTS_ = /^https:\/\/([a-z0-9-]+\.)*(fcm\.googleapis\.com|push\.apple\.com|push\.services\.mozilla\.com|notify\.windows\.com)\//i;
+
+// --- P-256 / ES256 with BigInt (Apps Script has no ECDSA) -------------------------------------------
+const EC_ = (() => {
+  const B = (h) => BigInt('0x' + h);
+  return {
+    p: B('ffffffff00000001000000000000000000000000ffffffffffffffffffffffff'),
+    n: B('ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551'),
+    b: B('5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b'),
+    gx: B('6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296'),
+    gy: B('4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5')
+  };
+})();
+function ecMod_(a, m) { const r = a % m; return r < 0n ? r + m : r; }
+function ecPow_(b, e, m) { let r = 1n; b = ecMod_(b, m); while (e > 0n) { if (e & 1n) r = (r * b) % m; b = (b * b) % m; e >>= 1n; } return r; }
+function ecInv_(a, m) { return ecPow_(a, m - 2n, m); }
+/** Jacobian point doubling and addition on y² = x³ - 3x + b. A point is [X, Y, Z]; Z = 0 is infinity. */
+function ecDouble_(P) {
+  const p = EC_.p, X = P[0], Y = P[1], Z = P[2];
+  if (Z === 0n || Y === 0n) return [0n, 1n, 0n];
+  const YY = (Y * Y) % p, S = (4n * X * YY) % p, ZZ = (Z * Z) % p;
+  const M = (3n * (X - ZZ) * (X + ZZ)) % p;
+  const X3 = ecMod_(M * M - 2n * S, p);
+  return [X3, ecMod_(M * (S - X3) - 8n * YY * YY, p), ecMod_(2n * Y * Z, p)];
+}
+function ecAdd_(P, Q) {
+  const p = EC_.p;
+  if (P[2] === 0n) return Q;
+  if (Q[2] === 0n) return P;
+  const Z1Z1 = (P[2] * P[2]) % p, Z2Z2 = (Q[2] * Q[2]) % p;
+  const U1 = (P[0] * Z2Z2) % p, U2 = (Q[0] * Z1Z1) % p;
+  const S1 = (P[1] * Q[2] * Z2Z2) % p, S2 = (Q[1] * P[2] * Z1Z1) % p;
+  if (U1 === U2) return S1 === S2 ? ecDouble_(P) : [0n, 1n, 0n];
+  const H = ecMod_(U2 - U1, p), R = ecMod_(S2 - S1, p), HH = (H * H) % p, HHH = (H * HH) % p, V = (U1 * HH) % p;
+  const X3 = ecMod_(R * R - HHH - 2n * V, p);
+  return [X3, ecMod_(R * (V - X3) - S1 * HHH, p), (P[2] * Q[2] * H) % p];
+}
+/** k·G in affine coordinates [x, y]. */
+function ecMulG_(k) {
+  let R = [0n, 1n, 0n], A = [EC_.gx, EC_.gy, 1n];
+  while (k > 0n) { if (k & 1n) R = ecAdd_(R, A); A = ecDouble_(A); k >>= 1n; }
+  const zi = ecInv_(R[2], EC_.p), zi2 = (zi * zi) % EC_.p;
+  return [(R[0] * zi2) % EC_.p, (R[1] * zi2 * zi) % EC_.p];
+}
+function bytesToBig_(bytes) { let h = ''; bytes.forEach((b) => { h += ((b & 255) + 256).toString(16).slice(1); }); return BigInt('0x' + (h || '0')); }
+function bigToBytes_(x, len) { let h = x.toString(16); while (h.length < len * 2) h = '0' + h; const out = []; for (let i = 0; i < len; i++) { const v = parseInt(h.substr(i * 2, 2), 16); out.push(v > 127 ? v - 256 : v); } return out; }
+function b64url_(bytes) { return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, ''); }
+function sha256Bytes_(v) { return typeof v === 'string' ? Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, v, Utilities.Charset.UTF_8) : Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, v); }
+/** A fresh 256-bit number below n, from Apps Script's random UUIDs (and anything extra passed in). */
+function ecRandom_(extra) {
+  for (;;) {
+    const k = bytesToBig_(sha256Bytes_(Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid() + (extra || '')));
+    if (k > 0n && k < EC_.n) return k;
+  }
+}
+/** ES256 signature (raw r‖s, 64 bytes) of a UTF-8 string with private key d. */
+function es256Sign_(text, d) {
+  const e = ecMod_(bytesToBig_(sha256Bytes_(text)), EC_.n);
+  for (;;) {
+    const k = ecRandom_(d.toString(16) + text);
+    const r = ecMod_(ecMulG_(k)[0], EC_.n);
+    if (r === 0n) continue;
+    const s = ecMod_(ecInv_(k, EC_.n) * (e + r * d), EC_.n);
+    if (s === 0n) continue;
+    return bigToBytes_(r, 32).concat(bigToBytes_(s, 32));
+  }
+}
+
+/** The VAPID key pair, made the first time it is needed. */
+function pushKeys_() {
+  const props = PropertiesService.getScriptProperties();
+  let dHex = props.getProperty('VAPID_D'), pub = props.getProperty('VAPID_PUB');
+  if (!dHex || !pub) {
+    const d = ecRandom_('vapid');
+    const P = ecMulG_(d);
+    dHex = d.toString(16);
+    pub = b64url_([4].concat(bigToBytes_(P[0], 32), bigToBytes_(P[1], 32)));
+    props.setProperty('VAPID_D', dHex);
+    props.setProperty('VAPID_PUB', pub);
+  }
+  return { d: BigInt('0x' + dHex), pub: pub };
+}
+function pushPublicKey_() { try { return pushKeys_().pub; } catch (err) { logError_('push:keys', err, {}); return ''; } }
+
+/** «Authorization: vapid …» for one push service; the token is reused for 12 hours. */
+function vapidAuth_(endpoint) {
+  const aud = String(endpoint).match(/^https:\/\/[^/]+/)[0];
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('vapid:' + aud);
+  const keys = pushKeys_();
+  if (hit) return 'vapid t=' + hit + ', k=' + keys.pub;
+  const sub = 'mailto:' + (adminEmails_()[0] || Session.getEffectiveUser().getEmail() || 'hello@magmafy.com');
+  const enc = (o) => b64url_(Utilities.newBlob(JSON.stringify(o)).getBytes());
+  const head = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud: aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: sub });
+  const jwt = head + '.' + b64url_(es256Sign_(head, keys.d));
+  cache.put('vapid:' + aud, jwt, 6 * 3600);
+  return 'vapid t=' + jwt + ', k=' + keys.pub;
+}
+
+function pushUrgent_(n) { return n.kind === 'إعلان' && /^🔴/.test(String(n.title || '')); }
+
+/** Called by notify_: this person gets woken up at the end of the request (unless they muted the kind). */
+function queuePush_(email, n, member) {
+  if (!pushUrgent_(n) && member && splitList_(member.pushOff).indexOf(n.kind) >= 0) return;
+  PUSH_NOW_[email] = true;
+}
+
+/**
+ * Wakes every device of the people queued in this request. Runs after the lock is released.
+ * Devices the push service says are gone (404 / 410) are removed; others are dropped after 5 failures in a row.
+ */
+function flushPush_() {
+  const emails = Object.keys(PUSH_NOW_);
+  PUSH_NOW_ = {};
+  if (!emails.length) return;
+  sendPush_(emails);
+}
+
+function sendPush_(emails, onlyEndpoint) {
+  const t = table_('PUSH');
+  const subs = t.rows.filter((r) => emails.indexOf(String(r.email).toLowerCase()) >= 0 && (!onlyEndpoint || r.endpoint === onlyEndpoint) && PUSH_HOSTS_.test(r.endpoint));
+  if (!subs.length) return 0;
+  const reqs = subs.map((s) => ({
+    url: s.endpoint, method: 'post', muteHttpExceptions: true, payload: '',
+    headers: { Authorization: vapidAuth_(s.endpoint), TTL: '86400', Urgency: 'high' }
+  }));
+  let res;
+  try { res = UrlFetchApp.fetchAll(reqs); } catch (err) { logError_('push:send', err, {}); return 0; }
+  let sent = 0;
+  withLock_(() => {
+    const now = new Date();
+    const fresh = table_('PUSH');
+    const gone = [];
+    subs.forEach((s, i) => {
+      const code = res[i].getResponseCode();
+      const row = fresh.rows.filter((r) => r.id === s.id)[0];
+      if (!row) return;
+      if (code >= 200 && code < 300) { sent++; fresh.update(row._row, { lastOk: now, fails: 0 }); return; }
+      const fails = (Number(row.fails) || 0) + 1;
+      if (code === 404 || code === 410 || fails >= 5) gone.push(row._row);
+      else fresh.update(row._row, { fails: fails });
+      if (code !== 404 && code !== 410) logError_('push:' + code, String(res[i].getContentText()).slice(0, 300), { device: s.device });
+    });
+    if (gone.length) deleteRows_(fresh.sheet, gone);
+  });
+  return sent;
+}
+
+/** The site registers this device (or refreshes it). */
+function crmPushSubscribe(sub) {
+  const me = requireUser_();
+  sub = sub || {};
+  const endpoint = String(sub.endpoint || '').trim();
+  if (!PUSH_HOSTS_.test(endpoint) || endpoint.length > 1000) throw new Error('عنوان التنبيهات ده مش مدعوم');
+  const device = String(sub.device || '').slice(0, 60);
+  return withLock_(() => {
+    const t = table_('PUSH');
+    const row = t.rows.filter((r) => r.endpoint === endpoint)[0];
+    if (row) t.update(row._row, { email: me.email, device: device || row.device, fails: 0 });
+    else {
+      t.append({ id: seqId_('P', 4), date: new Date(), email: me.email, device: device, endpoint: endpoint, lastOk: '', fails: 0 });
+      auditLog_(me, 'CRM', 'إنشاء', 'جهاز تنبيهات', device, null, { device: device });
+    }
+    return { ok: true, devices: t.rows.filter((r) => String(r.email).toLowerCase() === me.email).length + (row ? 0 : 1) };
+  });
+}
+
+/** This device stops getting notifications (switched off, or signing out). */
+function crmPushUnsubscribe(endpoint) {
+  const me = requireUser_();
+  return withLock_(() => {
+    const t = table_('PUSH');
+    const rows = t.rows.filter((r) => r.endpoint === String(endpoint || '') && String(r.email).toLowerCase() === me.email);
+    if (rows.length) deleteRows_(t.sheet, rows.map((r) => r._row));
+    return { ok: true };
+  });
+}
+
+/** «جرّب»: rings this device (or all of mine) with a test message. */
+function crmPushTest(endpoint) {
+  const me = requireUser_();
+  CacheService.getScriptCache().put('pushtest:' + me.email, String(Date.now()), 300);
+  const sent = sendPush_([me.email], endpoint ? String(endpoint) : '');
+  if (!sent) throw new Error('التنبيه موصلش للجهاز ده. اقفل التنبيهات وافتحها تاني من هنا');
+  return { ok: true, sent: sent };
+}
+
+/**
+ * Asked by the service worker right after a push: what to show. Unread notifications from the last
+ * 15 minutes (newest first, max 4), without muted kinds. Several devices may ask; each shows the same ones.
+ */
+function crmPushPull() {
+  const me = requireUser_();
+  const cache = CacheService.getScriptCache();
+  const out = [];
+  const test = cache.get('pushtest:' + me.email);
+  if (test && Date.now() - Number(test) < 120000) {
+    out.push({ id: 'test-' + test, kind: 'تجربة', title: 'التنبيهات شغالة ✓', body: 'كده هيوصلك أي جديد في Magmafy على الجهاز ده.', url: '#/settings' });
+  }
+  const muted = me.pushOff || [];
+  const since = Date.now() - 15 * 60000;
+  table_('NOTIFICATIONS').rows
+    .filter((n) => String(n.toEmail).toLowerCase() === me.email && !n.readAt && ms_(n.date) >= since && (pushUrgent_(n) || muted.indexOf(n.kind) < 0))
+    .sort(byDateDesc_('date')).slice(0, 4)
+    .forEach((n) => {
+      const link = linkFor_(n);
+      out.push({ id: n.id, kind: n.kind, title: String(n.title), body: n.kind + (n.by ? ' · ' + n.by : ''), url: link ? link.replace(/^[^#]*/, '') : '#/' });
+    });
+  return { items: out };
 }

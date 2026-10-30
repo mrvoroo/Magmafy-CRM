@@ -12,6 +12,7 @@ import { download, toCsv } from '../../lib/rules';
 import { dayKey } from '../../lib/time';
 import { store } from '../../lib/storage';
 import { useInstall } from '../../lib/install';
+import { usePush } from '../../lib/push';
 import { Avatar, Empty, Field, IconButton, Seg, Select, Skel } from '../../components/ui';
 import { Icon } from '../../components/Icon';
 import { Modal, useConfirm, useToast } from '../../components/overlay';
@@ -84,6 +85,56 @@ function EmailPrefs() {
   );
 }
 
+function PushCard() {
+  const { t } = useI18n();
+  const boot = useBoot();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { fail } = useActions();
+  const push = usePush(api, boot.settings.pushKey);
+  const [busy, setBusy] = useState(false);
+  const [off, setOff] = useState<string[]>(boot.me.pushOff || []);
+  async function run(fn: () => Promise<unknown>) { setBusy(true); try { await fn(); } finally { setBusy(false); } }
+  async function toggle(k: string, on: boolean) {
+    const next = on ? off.filter((x) => x !== k) : [...off, k];
+    setOff(next);
+    try { await api.saveMyPrefs({ pushOff: next }); qc.invalidateQueries({ queryKey: qk.boot }); toast(t('اتحفظ', 'Saved')); }
+    catch (e) { setOff(off); fail(e); }
+  }
+  const s = push.state;
+  return (
+    <section className="card c12">
+      <div className="row" style={{ gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="grow" style={{ minWidth: 220 }}>
+          <h3 style={{ margin: '0 0 4px' }}>{t('تنبيهات الموبايل', 'Push notifications')}{s === 'on' ? <span className="tag tag--good" style={{ marginInlineStart: 8 }}>{t('شغالة على الجهاز ده', 'On for this device')}</span> : null}</h3>
+          <p className="hint" style={{ margin: 0 }}>
+            {s === 'needs-install' ? t('على الآيفون التنبيهات بتشتغل من التطبيق بس: ثبّته من الكارت اللي فوق، افتحه من الأيقونة، وارجع هنا فعّلها.', 'On iPhone, notifications work only in the installed app: install it above, open it from its icon, then switch them on here.')
+              : s === 'unsupported' ? t('المتصفح ده مابيدعمش التنبيهات. جرّب Chrome أو Edge، أو ثبّت التطبيق.', 'This browser does not support push. Try Chrome or Edge, or install the app.')
+                : s === 'blocked' ? t('التنبيهات مرفوضة للموقع ده. افتحها من إعدادات المتصفح (أو إعدادات الموبايل ← الإشعارات ← Magmafy) وارجع هنا.', 'Notifications are blocked for this site. Allow them in the browser (or phone) settings, then come back.')
+                  : t('توصلك على الجهاز ده حتى لو التطبيق مقفول: رسايل، منشن، عملاء ومهام اتسندولك، حجوزات وإعلانات. كل جهاز بتفعّلها عليه لوحده.', 'Reach this device even when the app is closed: messages, mentions, assigned clients and tasks, bookings and announcements. Switch them on per device.')}
+          </p>
+        </div>
+        {s === 'off' && <button className="btn btn--grad" disabled={busy} onClick={() => run(async () => {
+          const err = await push.enable();
+          if (!err) toast(t('اتفعّلت ✓', 'Switched on ✓'));
+          else if (err !== 'blocked') toast(err);
+        })}><Icon name="bell" />{t('فعّل التنبيهات', 'Switch on')}</button>}
+        {s === 'on' && <div className="row" style={{ gap: 8 }}>
+          <button className="btn" disabled={busy} onClick={() => run(async () => { try { await push.test(); toast(t('اتبعت، هيوصلك خلال ثواني', 'Sent, it should arrive in a few seconds')); } catch (e) { fail(e); } })}><Icon name="send" />{t('جرّب', 'Test')}</button>
+          <button className="btn btn--ghost" disabled={busy} onClick={() => run(async () => { await push.disable(); toast(t('اتقفلت على الجهاز ده', 'Off for this device')); })}>{t('اقفلها', 'Switch off')}</button>
+        </div>}
+      </div>
+      {s === 'on' && (
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10, marginTop: 14 }}>
+          {EMAIL_KINDS.filter(([k]) => k !== 'طلب انضمام' || boot.me.isAdmin).map(([k, ar, en]) => (
+            <label key={k} className="check"><input type="checkbox" checked={!off.includes(k)} onChange={(e) => toggle(k, e.target.checked)} />{t(ar, en)}</label>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function InstallCard() {
   const { t, lang } = useI18n();
   const toast = useToast();
@@ -136,6 +187,7 @@ export function Preferences() {
   return (
     <div className="grid-12">
       <InstallCard />
+      <PushCard />
       <section className="card c6"><h3 style={{ marginBottom: 16 }}>{t('الشكل', 'Appearance')}</h3>
         <div className="stack">
           <div className="field">{t('المظهر', 'Theme')}<Seg value={pref} onChange={setPref} label={t('المظهر', 'Theme')} options={[['dark', t('غامق', 'Dark')], ['light', t('فاتح', 'Light')], ['auto', t('حسب الجهاز', 'System')]]} /></div>

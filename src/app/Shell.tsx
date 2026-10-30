@@ -19,6 +19,8 @@ import { LostReasonProvider } from '../features/lead/mutations';
 import { isLate } from '../lib/rules';
 import { useOnline } from '../lib/hooks';
 import type { Bootstrap } from '../api/schemas';
+import { api } from '../api/endpoints';
+import { refreshDevice } from '../lib/push';
 
 const LeadDrawer = lazy(() => import('../features/lead/LeadView').then((m) => ({ default: m.LeadDrawer })));
 
@@ -60,6 +62,9 @@ function ShellFrame({ boot, refreshing, onRefresh }: { boot: Bootstrap; refreshi
   const online = useOnline();
   // A new version of the site is downloaded and waiting (see main.tsx).
   const [update, setUpdate] = useState(false);
+  // Keep this device's push subscription known to the server (once a day).
+  const pushKey = boot.settings.pushKey;
+  useEffect(() => { if (pushKey) void refreshDevice(api, pushKey); }, [pushKey]);
   useEffect(() => { const on = () => setUpdate(true); window.addEventListener('mg-update', on); return () => window.removeEventListener('mg-update', on); }, []);
   const [cmdk, setCmdk] = useState(false);
   const [scrolled, setScrolled] = useState(false);

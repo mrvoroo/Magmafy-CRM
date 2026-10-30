@@ -16,7 +16,7 @@ export const STAGES = ['جديد', 'تم التواصل', 'اجتماع محجو
 export const PATH = STAGES.slice(0, 8) as readonly string[];
 export const ACTIVE = ['تم التواصل', 'اجتماع محجوز', 'تم الاجتماع', 'عرض مرسل', 'تفاوض', 'فترة تجريبية'];
 
-export const MeSchema = z.object({ email: str, name: str, role: str, isAdmin: z.boolean(), emailOff: list.optional().default([]) });
+export const MeSchema = z.object({ email: str, name: str, role: str, isAdmin: z.boolean(), emailOff: list.optional().default([]), pushOff: list.optional().default([]) });
 export type Me = z.infer<typeof MeSchema>;
 
 export const LeadSchema = z.object({
@@ -62,7 +62,7 @@ export const BootstrapSchema = z.object({
   me: MeSchema,
   lists: z.record(z.array(z.string())),
   team: z.array(TeamMemberSchema),
-  settings: z.object({ brand: str, teamWhatsapp: str, siteUrl: str, staleDays: num, sheetUrl: str, chatPollSeconds: num.optional(), emailDigest: str.optional(), filesReady: z.boolean().optional() }).passthrough(),
+  settings: z.object({ brand: str, teamWhatsapp: str, siteUrl: str, staleDays: num, sheetUrl: str, chatPollSeconds: num.optional(), emailDigest: str.optional(), filesReady: z.boolean().optional(), pushKey: str.optional() }).passthrough(),
   templates: z.array(TemplateSchema),
   leads: z.array(LeadSchema),
   tasks: z.array(TaskSchema),

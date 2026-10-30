@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 — 2026-10-30
+
+- Push notifications on phones and computers, even with the app closed: standard Web Push with VAPID keys made and signed (ES256) inside Apps Script, no outside service. Pushes carry no data; the service worker asks `crmPushPull` what is new and shows it, tapping opens the right page.
+- «تنبيهات الموبايل» in Preferences: switch on per device, test, switch off, mute kinds (urgent announcements always ring). iPhone: from the installed app (iOS 16.4+).
+- New sheet tab «أجهزة التنبيهات» (one row per device); dead devices are removed automatically; signing out removes the device.
+
 ## 1.3.0 — 2026-10-30
 
 - Installable app: manifest with maskable icons and shortcuts (contacts, schedule, tasks, inbox), iPhone full-screen metas and safe-area padding; «التطبيق على جهازك» card in Preferences with an install button (Chrome, Edge, Android) or the Safari steps on iPhone.

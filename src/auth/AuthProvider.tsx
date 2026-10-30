@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { useQueryClient } from '@tanstack/react-query';
 import { session } from '../api/client';
 import { api } from '../api/endpoints';
+import { dropDevice } from '../lib/push';
 
 type Ctx = { authed: boolean; lostSession: boolean; signIn: (token: string) => void; signOut: () => Promise<void> };
 const AuthCtx = createContext<Ctx | null>(null);
@@ -31,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [qc]);
   const signOut = useCallback(async () => {
     const t = session.token;
+    if (t) await dropDevice(api);
     try { if (t) await api.logout(t); } catch { /* already gone */ }
     session.clear();
     qc.clear();

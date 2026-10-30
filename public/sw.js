@@ -39,3 +39,55 @@ self.addEventListener('fetch', (e) => {
     })));
   }
 });
+
+// ---- Push notifications ------------------------------------------------------------------------
+// The push carries no data: it only wakes this worker, which asks the server (crmPushPull) what is new,
+// with the session the app left in the «mg-auth» cache (src/lib/push.ts). Every push must show something.
+const AUTH_URL = new URL('__mg_auth', self.registration.scope).href;
+const ICON = new URL('icon-192.png', self.registration.scope).href;
+const BADGE = new URL('icon-96.png', self.registration.scope).href;
+
+async function readAuth() {
+  try { const r = await (await caches.open('mg-auth')).match(AUTH_URL); return r ? await r.json() : null; } catch { return null; }
+}
+
+async function pull(auth) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const res = await fetch(auth.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'crm', fn: 'crmPushPull', args: [], token: auth.token }), signal: ctrl.signal });
+    const env = await res.json();
+    return env && env.ok && env.data && Array.isArray(env.data.items) ? env.data.items : null;
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+
+async function showPending() {
+  const auth = await readAuth();
+  const items = auth && auth.api && auth.token ? await pull(auth) : null;
+  const show = (n) => self.registration.showNotification(n.title, { body: n.body, tag: n.id, icon: ICON, badge: BADGE, lang: 'ar', dir: 'rtl', data: { url: n.url } });
+  if (items && items.length) {
+    // Ones already on screen keep their tag; if all of them are, the newest is put up again quietly
+    // (Safari and Chrome expect every push to show a notification).
+    const shown = await self.registration.getNotifications();
+    const fresh = items.filter((n) => !shown.some((s) => s.tag === n.id));
+    await Promise.all((fresh.length ? fresh : items.slice(0, 1)).slice().reverse().map(show));
+    return;
+  }
+  // Nothing to fetch (offline, signed out, or already read): a short note, never silence.
+  await self.registration.showNotification('Magmafy', {
+    body: auth ? 'فيه جديد في Magmafy، افتح التطبيق' : 'افتح Magmafy وسجّل دخول عشان تشوف التنبيهات', tag: 'mg-generic', icon: ICON, badge: BADGE, lang: 'ar', dir: 'rtl', data: { url: '#/' }
+  });
+}
+
+self.addEventListener('push', (e) => { e.waitUntil(showPending()); });
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const target = new URL((e.notification.data && e.notification.data.url) || '#/', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    // An open window just moves to the page (src/lib/push.ts listens); otherwise the app opens on it.
+    const win = list.find((c) => c.url.startsWith(self.registration.scope));
+    if (win) { win.postMessage({ type: 'mg-open', hash: new URL(target).hash }); return win.focus().catch(() => {}); }
+    return self.clients.openWindow(target);
+  }));
+});

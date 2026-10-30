@@ -84,13 +84,13 @@ class Blob {
 /** Shared Apps Script Utilities (both scripts use the same signing helpers). */
 export const utilities = {
   formatDate: (d: Date, tz: string, p: string) => fmt(d, tz, p), getUuid: () => randomUUID(),
-  computeDigest: (_a: unknown, s: string) => signed(createHash('sha256').update(s, 'utf8').digest()),
+  computeDigest: (_a: unknown, s: string | number[]) => signed(createHash('sha256').update(typeof s === 'string' ? Buffer.from(s, 'utf8') : unsigned(s)).digest()),
   computeHmacSha256Signature: (text: string, key: string) => signed(createHmac('sha256', key).update(text, 'utf8').digest()),
-  base64EncodeWebSafe: (s: string) => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+  base64EncodeWebSafe: (s: string | number[]) => (typeof s === 'string' ? Buffer.from(s, 'utf8') : unsigned(s)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
   base64DecodeWebSafe: (s: string) => signed(Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')),
   base64Decode: (s: string) => signed(Buffer.from(s, 'base64')),
   base64Encode: (bytes: number[]) => unsigned(bytes).toString('base64'),
-  newBlob: (bytes: number[], mime?: string, name?: string) => new Blob(bytes, mime, name),
+  newBlob: (bytes: number[] | string, mime?: string, name?: string) => new Blob(typeof bytes === 'string' ? signed(Buffer.from(bytes, 'utf8')) : bytes, mime, name),
   DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }
 };
 
@@ -182,6 +182,9 @@ export function createSim(opts: { owner: string }) {
   const props = new Map<string, string>();
   const cache = new Map<string, { v: string; until: number }>();
   const mails: Record<string, unknown>[] = [];
+  /** Push services: every request is recorded; `pushReply` decides the status per endpoint (default 201). */
+  const pushes: { url: string; headers: Record<string, string> }[] = [];
+  const pushReply = new Map<string, number>();
   let activeUser = '';
 
   const triggers: { fn: string; id: string }[] = [];
@@ -199,6 +202,13 @@ export function createSim(opts: { owner: string }) {
       newDataValidation: builder, newConditionalFormatRule: builder
     },
     ...services(props, cache),
+    UrlFetchApp: {
+      fetchAll: (reqs: { url: string; headers: Record<string, string> }[]) => reqs.map((r) => {
+        pushes.push({ url: r.url, headers: r.headers });
+        const code = pushReply.get(r.url) ?? 201;
+        return { getResponseCode: () => code, getContentText: () => (code >= 300 ? 'push service said ' + code : '') };
+      })
+    },
     MailApp: { sendEmail: (m: Record<string, unknown>) => { mails.push(m); }, getRemainingDailyQuota: () => 100 },
     Session: { getActiveUser: () => ({ getEmail: () => activeUser }), getEffectiveUser: () => ({ getEmail: () => opts.owner }) },
     HtmlService: { createHtmlOutputFromFile: () => ({ setTitle() { return this; }, addMetaTag() { return this; }, setFaviconUrl() { return this; } }) },
@@ -219,7 +229,7 @@ export function createSim(opts: { owner: string }) {
   const run = (name: string, ...args: unknown[]) => (ctx as { __run: (n: string, a: unknown[]) => unknown }).__run(name, args);
 
   return {
-    ss, props, mails, run, triggers,
+    ss, props, mails, run, triggers, pushes, pushReply,
     /** Runs a time-trigger function the way Apps Script does (with its trigger id). */
     trigger(fn: string) { const t = triggers.find((x) => x.fn === fn); if (!t) throw new Error('no trigger for ' + fn); return run(fn, { triggerUid: t.id }); },
     as(email: string) { activeUser = email; },

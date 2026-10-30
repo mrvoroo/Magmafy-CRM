@@ -39,7 +39,8 @@ const SHEET = {
   NOTIFICATIONS: 'الإشعارات',
   ACCESS: 'طلبات الانضمام',
   AUDIT: 'سجل التعديلات',
-  FILES: 'الملفات'
+  FILES: 'الملفات',
+  PUSH: 'أجهزة التنبيهات'
 };
 
 // [key, header, width, format]  — code reads columns by header, so the team can reorder them.
@@ -88,7 +89,7 @@ const COLS = {
   ],
   TEAM: [
     ['name', 'الاسم', 150], ['email', 'البريد', 220], ['role', 'الدور', 110], ['whatsapp', 'واتساب', 140, '@'], ['active', 'نشط', 70],
-    ['emailOff', 'إيقاف إيميلات', 220]
+    ['emailOff', 'إيقاف إيميلات', 220], ['pushOff', 'إيقاف تنبيهات الموبايل', 220]
   ],
   SETTINGS: [['key', 'الإعداد', 200], ['value', 'القيمة', 320], ['help', 'شرح', 460]],
   ERRORS: [['date', 'التاريخ', 140, 'yyyy-mm-dd hh:mm'], ['where', 'المكان', 140], ['message', 'الخطأ', 420], ['payload', 'البيانات', 420]],
@@ -133,6 +134,11 @@ const COLS = {
     ['id', 'ID', 80], ['date', 'التاريخ', 130, 'yyyy-mm-dd hh:mm'], ['leadId', 'ID العميل', 80], ['name', 'اسم الملف', 240],
     ['mime', 'النوع', 150], ['size', 'الحجم (بايت)', 110, '#,##0'], ['driveId', 'ID في Drive', 200, '@'], ['url', 'رابط Drive', 260],
     ['by', 'رفعه', 120], ['byEmail', 'بريد اللي رفعه', 200], ['deletedAt', 'اتمسح', 130, 'yyyy-mm-dd hh:mm'], ['deletedBy', 'مسحه', 120]
+  ],
+  // Phones and computers that get push notifications (Api.gs §12). One row per device.
+  PUSH: [
+    ['id', 'ID', 80], ['date', 'التاريخ', 130, 'yyyy-mm-dd hh:mm'], ['email', 'البريد', 200], ['device', 'الجهاز', 160],
+    ['endpoint', 'عنوان الاشتراك', 420], ['lastOk', 'آخر تنبيه وصل', 130, 'yyyy-mm-dd hh:mm'], ['fails', 'مرات الفشل', 90, '0']
   ]
 };
 
@@ -932,7 +938,7 @@ function setupMagmafy() {
   lists.setColumnWidths(1, names.length, 150);
 
   const keys = ['LEADS', 'BOOKINGS', 'ACTIVITY', 'TASKS', 'READINESS', 'TEMPLATES', 'TEAM', 'SETTINGS', 'ERRORS',
-    'ANNOUNCEMENTS', 'READS', 'THREADS', 'MESSAGES', 'NOTIFICATIONS', 'ACCESS', 'AUDIT', 'FILES'];
+    'ANNOUNCEMENTS', 'READS', 'THREADS', 'MESSAGES', 'NOTIFICATIONS', 'ACCESS', 'AUDIT', 'FILES', 'PUSH'];
   const big = ['LEADS', 'BOOKINGS', 'ACTIVITY', 'TASKS', 'READINESS', 'READS', 'MESSAGES', 'NOTIFICATIONS', 'AUDIT'];
   keys.forEach((key) => {
     const sh = ensureSheet_(ss, SHEET[key]);
@@ -968,6 +974,7 @@ function setupMagmafy() {
   if (sec && String(sec.value || '').length < 32) table_('SETTINGS').update(sec._row, { value: (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '') });
   SETTINGS_CACHE = null;
   try { ensureDigestTrigger_(); } catch (err) { logError_('trigger:digest', err, {}); }
+  try { pushKeys_(); } catch (err) { logError_('push:keys', err, {}); }
   const tpl = table_('TEMPLATES');
   const haveTpl = tpl.rows.map((r) => r.id);
   TEMPLATES.forEach((t) => { if (haveTpl.indexOf(t[0]) < 0) tpl.append({ id: t[0], channel: t[1], name: t[2], stage: t[3], subject: t[4], body: t[5], active: 'نعم' }); });
@@ -984,7 +991,7 @@ function setupMagmafy() {
 
   // Order the tabs and drop the default empty sheet.
   const order = [SHEET.SUMMARY, SHEET.LEADS, SHEET.BOOKINGS, SHEET.TASKS, SHEET.ACTIVITY, SHEET.READINESS, SHEET.TEMPLATES, SHEET.TEAM,
-    SHEET.ANNOUNCEMENTS, SHEET.THREADS, SHEET.MESSAGES, SHEET.NOTIFICATIONS, SHEET.READS, SHEET.ACCESS, SHEET.AUDIT, SHEET.FILES,
+    SHEET.ANNOUNCEMENTS, SHEET.THREADS, SHEET.MESSAGES, SHEET.NOTIFICATIONS, SHEET.READS, SHEET.ACCESS, SHEET.AUDIT, SHEET.FILES, SHEET.PUSH,
     SHEET.SETTINGS, SHEET.LISTS, SHEET.ERRORS];
   order.forEach((n, i) => { const sh = ss.getSheetByName(n); ss.setActiveSheet(sh); ss.moveActiveSheet(i + 1); });
   ['Sheet1', 'ورقة1', 'الورقة1'].forEach((n) => { const sh = ss.getSheetByName(n); if (sh && sh.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sh); });
