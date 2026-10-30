@@ -1,5 +1,5 @@
 // Caches the app shell and static assets only. API calls (script.google.com) always go to the network.
-const CACHE = 'mg-crm-v1';
+const CACHE = 'mg-crm-v2';
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
@@ -11,7 +11,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(e.request).catch(() => caches.match(new URL('./', self.registration.scope).href)));
     return;
   }
-  if (/\.(js|css|woff2|svg|webmanifest)$/.test(url.pathname)) {
+  if (/\.(js|css|woff2|svg|png|webp|webmanifest)$/.test(url.pathname)) {
     e.respondWith(caches.open(CACHE).then(async (c) => {
       const hit = await c.match(e.request);
       if (hit) return hit;

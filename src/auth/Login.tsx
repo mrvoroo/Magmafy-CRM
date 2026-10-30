@@ -6,7 +6,7 @@ import { useAuth } from './AuthProvider';
 import { useI18n } from '../i18n';
 import { store } from '../lib/storage';
 import { latinDigits } from '../lib/format';
-import { Logo } from '../components/Logo';
+import { Wordmark } from '../components/Logo';
 import { QuickPrefs } from '../components/Prefs';
 import { Icon } from '../components/Icon';
 import { useWorld, useWorldScene } from '../three/WorldProvider';
@@ -101,7 +101,7 @@ export function Login({ overlay = false }: { overlay?: boolean }) {
     <div className="auth" style={overlay ? { position: 'fixed', inset: 0, zIndex: 80, background: 'var(--bg)' } : undefined} role={overlay ? 'dialog' : undefined} aria-modal={overlay || undefined} aria-label={t('تسجيل الدخول', 'Sign in')}>
       <div className="auth__top"><QuickPrefs /></div>
       <div className="auth__box">
-        <div className="auth__brand"><Logo /> Magmafy CRM</div>
+        <div className="auth__brand"><Wordmark size={44} suffix="CRM" /></div>
 
         {step === 'email' && (
           <form className="stack" onSubmit={sendCode} noValidate>

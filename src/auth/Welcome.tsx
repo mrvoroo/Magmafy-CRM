@@ -4,7 +4,7 @@ import { useI18n } from '../i18n';
 import { store } from '../lib/storage';
 import { useWorldScene } from '../three/WorldProvider';
 import { QuickPrefs } from '../components/Prefs';
-import { Logo } from '../components/Logo';
+import { Wordmark } from '../components/Logo';
 import type { Shape } from '../three/world';
 
 const SLIDES: { shape: Shape; title: [string, string]; body: [string, string] }[] = [
@@ -23,7 +23,7 @@ export function Welcome() {
   return (
     <div className="onb">
       <div className="auth__top"><QuickPrefs /></div>
-      <div className="auth__brand" style={{ position: 'absolute', top: 24, insetInlineStart: 'clamp(16px, 6vw, 96px)' }}><Logo /> Magmafy CRM</div>
+      <div className="auth__brand" style={{ position: 'absolute', top: 24, insetInlineStart: 'clamp(16px, 6vw, 96px)' }}><Wordmark size={44} suffix="CRM" /></div>
       <div key={i} className="page-enter stack" style={{ gap: 18 }}>
         <h1 className="display">{t(s.title[0], s.title[1])}</h1>
         <p>{t(s.body[0], s.body[1])}</p>
