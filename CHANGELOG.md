@@ -25,4 +25,5 @@ First complete build.
 - 3D: the real magmafy-pro particle volcano everywhere (no SVG fallback); slow devices get fewer particles but keep animating; bigger volcano in the Workspace hero.
 - Brand: official Magmafy mark and wordmark (login, welcome, header, rail), favicon, app icons and Apple touch icon.
 - Mobile: every 3D shape sits centred behind the content, sized to the screen width.
+- Login: the Magmafy mark as a 3D particle shape (same shader and colours as the volcano) floating above a centred form.
 - Fix: company grouping now strips generic Arabic words (`\b` does not match Arabic letters).

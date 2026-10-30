@@ -53,6 +53,66 @@ export function buildShape(name: string, n: number, r: () => number): Float32Arr
       }
     }
     for (let i = 0; i < n; i++) out[i * 3 + 1] -= 0.25;
+  } else if (name === 'logo') {
+    // The Magmafy mark: a rounded-square badge with a raised M, built from particles like the volcano.
+    // M = two legs that flare at the top and bottom + a V meeting a little below the middle (as in the logo).
+    const S = 2.2, R = 0.42, M_FRONT = 0.42, BADGE_BACK = -0.5;
+    const seg = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+      const dx = bx - ax, dy = by - ay;
+      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+      return { d: Math.hypot(px - (ax + t * dx), py - (ay + t * dy)), t };
+    };
+    // Signed-ish distance to the M stroke: < 0 inside.
+    const mDist = (x: number, y: number) => {
+      const L = seg(x, y, -0.5, -0.6, -0.5, 0.58), Rr = seg(x, y, 0.5, -0.6, 0.5, 0.58);
+      const legW = (t: number) => 0.1 + 0.09 * Math.pow(Math.abs(t - 0.45) * 2, 1.6); // thin waist, flared ends
+      const D1 = seg(x, y, -0.5, 0.58, 0, -0.04), D2 = seg(x, y, 0, -0.04, 0.5, 0.58);
+      return Math.min(L.d - legW(L.t), Rr.d - legW(Rr.t), D1.d - (0.1 + 0.04 * D1.t), D2.d - (0.1 + 0.04 * (1 - D2.t)));
+    };
+    // Rounded square |x|,|y| ≤ 1 with corner radius R: distance to its edge (< 0 inside).
+    const boxDist = (x: number, y: number) => {
+      const qx = Math.abs(x) - (1 - R), qy = Math.abs(y) - (1 - R);
+      return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - R;
+    };
+    const inM = (band: number) => { // a point inside the M (band > 0: only near its edge)
+      for (;;) {
+        const x = (r() * 2 - 1) * 0.72, y = (r() * 2 - 1) * 0.8;
+        const d = mDist(x, y);
+        if (d < 0 && (!band || d > -band)) return [x, y];
+      }
+    };
+    const onRim = () => { // a point on the rounded square's edge
+      for (;;) {
+        const x = r() * 2 - 1, y = r() * 2 - 1;
+        if (Math.abs(boxDist(x, y)) < 0.025) return [x, y];
+      }
+    };
+    for (let i = 0; i < n; i++) {
+      const k = i % 20;
+      if (k < 6) { // M front face: the brightest, densest part
+        const [x, y] = inM(0);
+        set(i, x * S, y * S, M_FRONT + gauss() * 0.02);
+      } else if (k < 9) { // M sides: extruded edge from the badge face to the front
+        const [x, y] = inM(0.035);
+        set(i, x * S, y * S, r() * M_FRONT);
+      } else if (k < 14) { // badge rim, front and back edges and the band between
+        const [x, y] = onRim();
+        const z = k < 11 ? 0 : k < 12 ? BADGE_BACK : r() * BADGE_BACK;
+        set(i, x * S, y * S, z + gauss() * 0.02);
+      } else if (k < 18) { // badge face: sparse glossy surface with the logo's swirl, outside the M
+        let x = 0, y = 0;
+        for (;;) {
+          x = r() * 2 - 1; y = r() * 2 - 1;
+          if (boxDist(x, y) > -0.02 || mDist(x, y) < 0.06) continue;
+          const swirl = Math.abs(Math.sin(Math.atan2(y, x) * 1.5 + Math.hypot(x, y) * 3.2));
+          if (r() < 0.35 + 0.65 * swirl) break;
+        }
+        set(i, x * S, y * S, (k < 17 ? 0 : BADGE_BACK) + gauss() * 0.03);
+      } else { // glow drifting around the mark
+        const th = r() * Math.PI * 2, rad = S * (1.05 + r() * 0.55);
+        set(i, Math.cos(th) * rad, Math.sin(th) * rad * 0.95, gauss() * 0.6);
+      }
+    }
   } else if (name === 'websites') {
     // A sofa: base, seat cushions, back, arms and legs, the way our 3D showrooms show it.
     const pick = boxes([

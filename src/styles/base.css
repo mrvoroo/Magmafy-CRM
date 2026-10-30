@@ -529,11 +529,15 @@ kbd { font: 500 11px var(--f-num); border: 1px solid var(--line-2); border-radiu
 .notif.is-unread b::after { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-inline-start: 6px; vertical-align: middle; }
 
 /* ================= auth ================= */
-.auth { position: relative; z-index: 1; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 520px) 1fr; align-items: center; padding: 32px clamp(16px, 5vw, 72px); }
-.auth__box { display: flex; flex-direction: column; gap: 18px; padding: 34px 32px 28px; border-radius: 32px; background: color-mix(in srgb, var(--card) 86%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: var(--shadow-pop); }
+.auth { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 32px 16px; }
+/* The 3D logo floats here, above the form. */
+.auth__mark { width: 100%; height: clamp(170px, 30vh, 300px); flex-shrink: 0; }
+.auth__box { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 18px; padding: 34px 32px 28px; border-radius: 32px; background: color-mix(in srgb, var(--card) 86%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: var(--shadow-pop); }
 .auth__box h1 { margin: 0; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.15; }
 .auth__box p { margin: 0; color: var(--ink-2); line-height: 1.8; }
 .auth__brand { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 18px; }
+.auth__brand { justify-content: center; }
+.auth__box .stack > h1, .auth__box .stack > h1 + p { text-align: center; }
 .wordmark { display: inline-flex; align-items: center; gap: .5em; }
 .wordmark__text { font-family: 'Inter', system-ui, sans-serif; font-weight: 800; letter-spacing: -.02em; color: var(--ink); line-height: 1; }
 .wordmark__fy { background: linear-gradient(90deg, #fa7e1e, #d62976 55%, #962fbf); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -642,7 +646,8 @@ kbd { font: 500 11px var(--f-num); border: 1px solid var(--line-2); border-radiu
   .lead-hero { grid-template-columns: auto minmax(0, 1fr); }
   .lead-hero > :last-child { grid-column: 1 / -1; }
   .tools { grid-template-columns: minmax(0, 1fr); }
-  .auth { grid-template-columns: minmax(0, 1fr); align-items: end; padding-bottom: 24px; }
+  .auth { justify-content: flex-end; padding: 72px 16px 24px; }
+  .auth__mark { height: clamp(150px, 26vh, 240px); }
   .modal { top: auto; bottom: 0; translate: -50% 0; width: 100vw; border-radius: 28px 28px 0 0; max-height: 92vh; animation: rise var(--t-med) var(--ease); }
   .fn-row { grid-template-columns: 96px minmax(0, 1fr) 76px; gap: 10px; }
   .fn-gap { grid-template-columns: 96px 1fr; gap: 10px; }

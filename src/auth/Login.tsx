@@ -32,7 +32,8 @@ export function Login({ overlay = false }: { overlay?: boolean }) {
   const boxes = useRef<(HTMLInputElement | null)[]>([]);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
-  useWorldScene({ shape: 'volcano', anchor, anchorFit: 1, opacity: 0.95 }, [anchor]);
+  // The Magmafy mark in particles, floating above the form.
+  useWorldScene({ shape: 'logo', anchor, anchorFit: 1.05, opacity: 1 }, [anchor]);
   useEffect(() => { if (wait <= 0) return; const id = setTimeout(() => setWait(wait - 1), 1000); return () => clearTimeout(id); }, [wait]);
 
   async function sendCode(e?: FormEvent) {
@@ -100,6 +101,7 @@ export function Login({ overlay = false }: { overlay?: boolean }) {
   return (
     <div className="auth" style={overlay ? { position: 'fixed', inset: 0, zIndex: 80, background: 'var(--bg)' } : undefined} role={overlay ? 'dialog' : undefined} aria-modal={overlay || undefined} aria-label={t('تسجيل الدخول', 'Sign in')}>
       <div className="auth__top"><QuickPrefs /></div>
+      <div ref={setAnchor} aria-hidden="true" className="auth__mark" />
       <div className="auth__box">
         <div className="auth__brand"><Wordmark size={44} suffix="CRM" /></div>
 
@@ -176,7 +178,6 @@ export function Login({ overlay = false }: { overlay?: boolean }) {
           </div>
         )}
       </div>
-      <div ref={setAnchor} aria-hidden="true" className="hide-sm" style={{ height: '62vh', alignSelf: 'center' }} />
       {config.mock && step === 'email' ? (
         <p className="hint" style={{ position: 'absolute', bottom: 16, insetInlineStart: 24 }}><Icon name="sparkle" size={14} /> {t('وضع التجربة: جرّب magmafyogp@gmail.com (أدمن) أو sara@magmafy.com (مبيعات)', 'Demo: try magmafyogp@gmail.com (admin) or sara@magmafy.com (sales)')}</p>
       ) : null}

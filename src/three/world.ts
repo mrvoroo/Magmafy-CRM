@@ -4,15 +4,17 @@
 import * as THREE from 'three';
 import { buildShape, rand } from './shapes';
 
-export const SHAPES = ['volcano', 'core', 'research', 'content', 'websites', 'consulting', 'galaxy', 'ring', 'wave', 'globe', 'dna', 'saturn'] as const;
+export const SHAPES = ['volcano', 'core', 'research', 'content', 'websites', 'consulting', 'galaxy', 'ring', 'wave', 'globe', 'dna', 'saturn', 'logo'] as const; // logo last: the others keep magmafy-pro's random seeds
 export type Shape = (typeof SHAPES)[number];
 export type Scene = { shape: Shape; x?: number; y?: number; scale?: number; opacity?: number; anchor?: HTMLElement | null; anchorFit?: number; corner?: 'end-bottom' | 'center' };
 
 const MORPH_SECONDS = 1.8;
 const CAM_Z = 9, FOV = 45;
 const HALF_H = CAM_Z * Math.tan((FOV / 2) * Math.PI / 180);
-// The volcano spans about y -2.45 … 3.3: its height and centre, for fitting it into a box on screen.
-const SHAPE_H = 5.6, SHAPE_CY = 0.4;
+// Height and vertical centre of a shape, for fitting it into a box on screen.
+// The volcano spans about y -2.45 … 3.3; the logo badge is ±2.2 plus its glow.
+const FIT: Record<string, { h: number; cy: number }> = { volcano: { h: 5.6, cy: 0.4 }, logo: { h: 5.0, cy: 0 } };
+const fitOf = (name: string) => FIT[name] || FIT.volcano;
 
 const vertex = /* glsl */`
   attribute float aRand;
@@ -90,6 +92,7 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
   const start = rand(3);
   for (let i = 0; i < from.length; i++) from[i] = (start() - 0.5) * 18;
   let target = shapes.volcano;
+  let current: string = 'volcano';
   const to = new Float32Array(target);
   const geometry = new THREE.BufferGeometry();
   const fromAttr = new THREE.BufferAttribute(from, 3);
@@ -156,9 +159,9 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
     if (!r.width) return;
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const ndcX = (cx / vw) * 2 - 1, ndcY = 1 - (cy / vh) * 2;
-    const scale = ((r.height * anchorFit) / vh) * 2 * HALF_H / SHAPE_H;
+    const scale = ((r.height * anchorFit) / vh) * 2 * HALF_H / fitOf(current).h;
     goal.x = ndcX * HALF_H * camera.aspect;
-    goal.y = ndcY * HALF_H - SHAPE_CY * scale;
+    goal.y = ndcY * HALF_H - fitOf(current).cy * scale;
     goal.scale = scale;
     goal.size = baseSize * Math.max(0.8, Math.min(1, scale * 1.8));
   }
@@ -175,7 +178,7 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
       const fit = (2 * HALF_H * camera.aspect * 0.92) / 5.4; // the widest shapes are ~5.4 units across
       const k = Math.min(fit, 1.15);
       goal.x = 0;
-      goal.y = HALF_H * 0.12 - SHAPE_CY * k;
+      goal.y = HALF_H * 0.12 - fitOf(current).cy * k;
       goal.scale = k;
       goal.size = baseSize;
       return;
@@ -247,8 +250,10 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
 
     group.position.set(state.x, state.y, 0);
     group.scale.setScalar(state.scale);
-    group.rotation.y = state.spin + mouse.x * (anchor ? 0.15 : 0.35);
-    group.rotation.x = 0.18 + mouse.y * (anchor ? 0.08 : 0.2);
+    // The logo sways so the M always faces the viewer; every other shape spins like on magmafy-pro.
+    const flat = current === 'logo';
+    group.rotation.y = (flat ? Math.sin(state.spin * 4) * 0.5 : state.spin) + mouse.x * (anchor ? 0.15 : 0.35);
+    group.rotation.x = (flat ? 0.06 : 0.18) + mouse.y * (anchor ? 0.08 : 0.2);
     material.uniforms.uSize.value = state.size;
     material.uniforms.uOpacity.value = Math.min(1, state.opacity * opacityMul);
     render();
@@ -269,7 +274,7 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
     setTheme,
     setDimmed(d) { dimmed = d; },
     morph(s) {
-      if (shapes[s.shape] && shapes[s.shape] !== target) retarget(shapes[s.shape]);
+      if (shapes[s.shape] && shapes[s.shape] !== target) { retarget(shapes[s.shape]); current = s.shape; }
       last = s;
       place(s);
       goal.opacity = s.opacity ?? 0.9;
