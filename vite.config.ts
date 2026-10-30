@@ -18,6 +18,8 @@ function prodHtml(): Plugin {
         "script-src 'self' " + hash,
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob:",
+        "frame-src blob:",
+        "media-src blob:",
         "font-src 'self'",
         "connect-src 'self' https://script.google.com https://script.googleusercontent.com",
         "worker-src 'self'",

@@ -47,6 +47,42 @@ export function Settings() {
   );
 }
 
+const EMAIL_KINDS: [string, string, string][] = [
+  ['إعلان', 'إعلانات الإدارة (العاجل بيوصل دايمًا)', 'Announcements (urgent ones always arrive)'], ['منشن', 'لما حد يعملك منشن', 'When someone mentions you'],
+  ['رسالة', 'رسايل المحادثات', 'Chat messages'], ['عميل جديد', 'عميل اتسند لك', 'A client assigned to you'], ['مهمة', 'مهمة اتسندت لك', 'A task assigned to you'],
+  ['اجتماع جديد', 'حجز جديد من الموقع', 'New booking from the website'], ['ملف', 'ملف اترفع لعميل بتاعك', 'A file added to your client'], ['طلب انضمام', 'طلبات الانضمام (للأدمن)', 'Access requests (admins)']
+];
+
+function EmailPrefs() {
+  const { t } = useI18n();
+  const boot = useBoot();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { fail } = useActions();
+  const [off, setOff] = useState<string[]>(boot.me.emailOff || []);
+  const digest = boot.settings.emailDigest || '15';
+  const when = digest === 'off' ? t('تنبيهات الإيميل مقفولة من الأدمن.', 'Email notifications are switched off by an admin.')
+    : digest === '0' ? t('بتوصل فورًا.', 'They arrive right away.')
+      : digest === '60' ? t('بتتجمع وتتبعت كل ساعة.', 'Grouped and sent every hour.')
+        : t('بتتجمع وتتبعت كل ' + digest + ' دقيقة.', 'Grouped and sent every ' + digest + ' minutes.');
+  async function toggle(k: string, on: boolean) {
+    const next = on ? off.filter((x) => x !== k) : [...off, k];
+    setOff(next);
+    try { await api.saveMyPrefs({ emailOff: next }); qc.invalidateQueries({ queryKey: qk.boot }); toast(t('اتحفظ', 'Saved')); }
+    catch (e) { setOff(off); fail(e); }
+  }
+  return (
+    <section className="card c12"><h3 style={{ marginBottom: 6 }}>{t('تنبيهات الإيميل', 'Email notifications')}</h3>
+      <p className="hint" style={{ marginBottom: 14 }}>{t('على ', 'To ')}<b className="ltr">{boot.me.email}</b> · {when} {t('اللي بتقراه في الموقع مش بيتبعتلك تاني.', 'Anything you read in the CRM is not emailed.')}</p>
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
+        {EMAIL_KINDS.filter(([k]) => k !== 'طلب انضمام' || boot.me.isAdmin).map(([k, ar, en]) => (
+          <label key={k} className="check"><input type="checkbox" checked={!off.includes(k)} disabled={digest === 'off'} onChange={(e) => toggle(k, e.target.checked)} />{t(ar, en)}</label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function Preferences() {
   const { t, lang, setLang } = useI18n();
   const { pref, setPref, motion, setMotion } = useTheme();
@@ -72,6 +108,7 @@ export function Preferences() {
           <Field label={t('الصفحة الافتتاحية', 'Start page')}><Select value={start} onValue={(x) => { setStart(x); store.set('mg-crm-start', x); }} options={[['/', t('مساحة العمل', 'Workspace')], ['/schedule', t('جدولك', 'Schedule')], ['/contacts', t('جهات الاتصال', 'Contacts')], ['/tasks', t('المهام', 'Tasks')], ['/inbox', t('المحادثات', 'Inbox')]]} /></Field>
         </div>
       </section>
+      <EmailPrefs />
     </div>
   );
 }
@@ -198,8 +235,14 @@ function Agency() {
   const labels: Record<string, [string, string]> = {
     BRAND: ['اسم الوكالة', 'Agency name'], STALE_DAYS: ['أيام «محتاج متابعة»', 'Days before “needs follow-up”'], DEFAULT_OWNER: ['المسؤول الافتراضي', 'Default owner'],
     TARGET_LEADS: ['هدف العملاء الجداد / شهر', 'Monthly new-lead target'], TARGET_MEETINGS: ['هدف الاجتماعات / شهر', 'Monthly meetings target'], TARGET_CLIENTS: ['هدف العملاء بيدفعوا / شهر', 'Monthly new-client target'],
-    TARGET_MRR: ['هدف الاشتراكات (ر.س)', 'MRR target (SAR)'], CRM_URL: ['رابط الـ CRM الجديد', 'New CRM URL'], CHAT_POLL_SECONDS: ['تحديث المحادثة (ثانية)', 'Chat refresh (seconds)']
+    TARGET_MRR: ['هدف الاشتراكات (ر.س)', 'MRR target (SAR)'], CRM_URL: ['رابط الـ CRM', 'CRM URL'], CHAT_POLL_SECONDS: ['تحديث المحادثة (ثانية)', 'Chat refresh (seconds)'],
+    EMAIL_DIGEST_MINUTES: ['تنبيهات الإيميل', 'Email notifications'], FILES_URL: ['رابط سكريبت الملفات (Drive)', 'Files script URL (Drive)'], FILES_SECRET: ['المفتاح السري لسكريبت الملفات', 'Files script secret']
   };
+  const digestOptions: [string, string][] = [['0', t('فوري', 'Right away')], ['5', t('كل 5 دقايق', 'Every 5 minutes')], ['10', t('كل 10 دقايق', 'Every 10 minutes')], ['15', t('كل 15 دقيقة', 'Every 15 minutes')], ['30', t('كل 30 دقيقة', 'Every 30 minutes')], ['60', t('كل ساعة', 'Every hour')], ['off', t('مقفولة', 'Off')]];
+  // Show the email section first; the files script settings together at the end.
+  const order = (k: string) => (k === 'EMAIL_DIGEST_MINUTES' ? -1 : k.startsWith('FILES_') ? 1 : 0);
+  const rows = (q.data || []).slice().sort((a, b) => order(a.key) - order(b.key));
+  const [showSecret, setShowSecret] = useState(false);
   const changed = (q.data || []).filter((s) => (vals[s.key] ?? '') !== s.value);
   async function save() {
     setBusy(true);
@@ -210,10 +253,18 @@ function Agency() {
   return (
     <section className="card">
       <div className="fields">
-        {(q.data || []).map((s) => (
-          <Field key={s.key} label={labels[s.key] ? t(...labels[s.key]) : s.key} hint={s.help}>
-            {s.key === 'DEFAULT_OWNER' ? <Select value={vals[s.key] || ''} onValue={(x) => setVals({ ...vals, [s.key]: x })} options={boot.team.map((m) => [m.name, m.name] as [string, string])} placeholder="—" />
-              : <input className={'input' + (/^(TARGET|STALE|CHAT)/.test(s.key) ? ' num' : '') + (s.key === 'CRM_URL' ? ' ltr' : '')} inputMode={/^(TARGET|STALE|CHAT)/.test(s.key) ? 'numeric' : undefined} value={vals[s.key] ?? ''} onChange={(e) => setVals({ ...vals, [s.key]: e.target.value })} />}
+        {rows.map((s) => (
+          <Field key={s.key} label={labels[s.key] ? t(...labels[s.key]) : s.key} hint={s.key === 'EMAIL_DIGEST_MINUTES' ? t('التنبيهات اللي ماتقرتش في الموقع بتتجمع في إيميل واحد لكل شخص. الإعلان العاجل بيتبعت فورًا دايمًا.', 'Notifications not yet read in the CRM are grouped into one email per person. Urgent announcements always go right away.') : s.help}>
+            {s.key === 'EMAIL_DIGEST_MINUTES' ? <Select value={vals[s.key] || '15'} onValue={(x) => setVals({ ...vals, [s.key]: x })} options={digestOptions} raw />
+            : s.key === 'FILES_SECRET' ? (
+              <div className="row" style={{ gap: 8 }}>
+                <input className="input ltr num grow" type={showSecret ? 'text' : 'password'} readOnly value={vals[s.key] ?? ''} aria-label={t('المفتاح السري', 'Secret')} />
+                <IconButton icon="eye" label={showSecret ? t('اخفي', 'Hide') : t('اظهر', 'Show')} onClick={() => setShowSecret(!showSecret)} />
+                <IconButton icon="copy" label={t('انسخ', 'Copy')} onClick={() => { navigator.clipboard?.writeText(vals[s.key] || '').then(() => toast(t('اتنسخ', 'Copied'))).catch(() => {}); }} />
+              </div>
+            )
+            : s.key === 'DEFAULT_OWNER' ? <Select value={vals[s.key] || ''} onValue={(x) => setVals({ ...vals, [s.key]: x })} options={boot.team.map((m) => [m.name, m.name] as [string, string])} placeholder="—" />
+              : <input className={'input' + (/^(TARGET|STALE|CHAT)/.test(s.key) ? ' num' : '') + (s.key === 'CRM_URL' || s.key === 'FILES_URL' ? ' ltr' : '')} inputMode={/^(TARGET|STALE|CHAT)/.test(s.key) ? 'numeric' : undefined} value={vals[s.key] ?? ''} onChange={(e) => setVals({ ...vals, [s.key]: e.target.value })} />}
           </Field>
         ))}
       </div>

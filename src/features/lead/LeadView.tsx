@@ -3,11 +3,13 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { qk, useAudit, useLead, useThreads } from '../../api/queries';
 import { api } from '../../api/endpoints';
-import type { Lead, LeadDetail } from '../../api/schemas';
+import type { Lead, LeadDetail, LeadFile } from '../../api/schemas';
+import { FILE_ACCEPT, checkFile, deleteLeadFile, fetchLeadFile, fileKind, fileSize, uploadLeadFile } from '../../api/files';
+import { errorText } from '../../api/errors';
 import { PATH } from '../../api/schemas';
 import { useBoot } from '../../app/boot';
 import { useActions } from '../../app/actions';
-import { Drawer, useConfirm } from '../../components/overlay';
+import { Drawer, useConfirm, useToast } from '../../components/overlay';
 import { Avatar, Field, IconButton, PrioPill, Select, Skel, TypePill, Empty, Tip } from '../../components/ui';
 import { Icon } from '../../components/Icon';
 import { useI18n } from '../../i18n';
@@ -68,7 +70,7 @@ function LeadBody({ id, onClose, dirtyRef, inDrawer }: { id: string; onClose?: (
   const tabs: [Tab, string, number?][] = [
     ['card', t('الكارت', 'Card')], ['scope', t('النطاق', 'Scope')],
     ['tasks', t('المهام', 'Tasks'), det?.tasks.filter((x) => x.status === 'مفتوحة').length],
-    ['docs', t('المستندات', 'Documents')], ['log', t('السجل', 'Timeline'), det ? det.activities.length + det.bookings.length : undefined],
+    ['docs', t('المستندات', 'Documents'), det?.files?.length || undefined], ['log', t('السجل', 'Timeline'), det ? det.activities.length + det.bookings.length : undefined],
     ['chat', t('المحادثة', 'Discussion')], ...(me.isAdmin ? [['audit', t('التعديلات', 'Changes')] as [Tab, string]] : [])
   ];
 
@@ -286,6 +288,118 @@ function TasksTab({ det }: { det: LeadDetail }) {
   );
 }
 
+/* ---------- files on Google Drive ---------- */
+type Up = { key: string; name: string; progress: number; error?: string };
+const KIND_LABEL: Record<string, string> = { pdf: 'PDF', image: 'IMG', doc: 'DOC', sheet: 'XLS', slides: 'PPT', zip: 'ZIP', text: 'TXT', file: 'FILE' };
+
+function FilesSection({ det }: { det: LeadDetail }) {
+  const { t, lang } = useI18n();
+  const boot = useBoot();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const input = useRef<HTMLInputElement>(null);
+  const [ups, setUps] = useState<Up[]>([]);
+  const [drag, setDrag] = useState(false);
+  const [view, setView] = useState<{ f: LeadFile; url?: string; mime?: string; error?: string } | null>(null);
+  const files = det.files || [];
+  const ready = boot.settings.filesReady !== false;
+  useEffect(() => () => { if (view?.url) URL.revokeObjectURL(view.url); }, [view]);
+  const viewRef = useRef<HTMLElement>(null);
+  const viewId = view?.f.id;
+  useEffect(() => { if (viewId) viewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [viewId]);
+
+  async function add(list: FileList | File[]) {
+    for (const file of Array.from(list)) {
+      const key = file.name + ':' + file.size + ':' + Date.now();
+      const bad = checkFile(file);
+      setUps((u) => [...u, { key, name: file.name, progress: 0, error: bad || undefined }]);
+      if (bad) continue;
+      try {
+        await uploadLeadFile(det.lead.id, file, (p) => setUps((u) => u.map((x) => (x.key === key ? { ...x, progress: p } : x))));
+        setUps((u) => u.filter((x) => x.key !== key));
+        toast(t('اترفع ', 'Uploaded ') + file.name);
+        qc.invalidateQueries({ queryKey: qk.lead(det.lead.id) });
+      } catch (e) {
+        setUps((u) => u.map((x) => (x.key === key ? { ...x, error: errorText(e, lang) } : x)));
+      }
+    }
+  }
+  async function openFile(f: LeadFile) {
+    setView({ f });
+    try { const r = await fetchLeadFile(f); setView({ f, url: r.url, mime: r.mime }); }
+    catch (e) { setView({ f, error: errorText(e, lang) }); }
+  }
+  async function remove(f: LeadFile) {
+    const ok = await confirm({ title: t('تمسح الملف؟', 'Delete the file?'), body: t('هيتشال من الـ CRM ويروح سلة المهملات في Drive (يترجع خلال 30 يوم).', 'It leaves the CRM and goes to the Drive bin (restorable for 30 days).') + ' ' + f.name, confirm: t('امسح', 'Delete'), danger: true });
+    if (!ok) return;
+    try { await deleteLeadFile(f); toast(t('اتمسح', 'Deleted')); if (view?.f.id === f.id) setView(null); qc.invalidateQueries({ queryKey: qk.lead(det.lead.id) }); }
+    catch (e) { toast(errorText(e, lang)); }
+  }
+
+  return (
+    <section style={{ marginBottom: 22 }}>
+      <div className="sec-head" style={{ marginBottom: 10 }}><h3 className="grow" style={{ margin: 0 }}>{t('الملفات', 'Files')}</h3>
+        {files.length ? <span className="faint num" style={{ fontSize: 12 }}>{files.length}</span> : null}</div>
+      {ready ? (
+        <div className={'dropzone' + (drag ? ' is-over' : '')} role="button" tabIndex={0}
+          onClick={() => input.current?.click()} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && input.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) add(e.dataTransfer.files); }}>
+          <span className="dropzone__icon"><Icon name="upload" /></span>
+          <span><b>{t('اسحب الملفات هنا أو دوس للاختيار', 'Drop files here or click to choose')}</b>
+            <small>{t('PDF، صور، Word، Excel، PowerPoint، ZIP · لحد 20 ميجا للملف · بتتحفظ على Google Drive', 'PDF, images, Word, Excel, PowerPoint, ZIP · up to 20 MB each · saved to Google Drive')}</small></span>
+          <input ref={input} type="file" multiple accept={FILE_ACCEPT} hidden onChange={(e) => { if (e.target.files?.length) add(e.target.files); e.target.value = ''; }} />
+        </div>
+      ) : <p className="hint hint--warn">{t('رفع الملفات لسه مش متفعّل: الأدمن يحط FILES_URL في الإعدادات.', 'File uploads are not set up yet: an admin needs to set FILES_URL in Settings.')}</p>}
+
+      {ups.length ? (
+        <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+          {ups.map((u) => (
+            <div key={u.key} className="upload-row">
+              <span className="ellipsis grow">{u.name}</span>
+              {u.error ? <><span className="tag tag--bad">{u.error}</span><IconButton icon="close" size="xs" label={t('إخفاء', 'Dismiss')} onClick={() => setUps((x) => x.filter((y) => y.key !== u.key))} /></>
+                : <span className="progress" aria-label={t('بيترفع', 'Uploading')} role="progressbar" aria-valuenow={Math.round(u.progress * 100)}><i style={{ width: Math.max(4, u.progress * 100) + '%' }} /></span>}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {files.length ? (
+        <div className="file-grid">
+          {files.map((f) => {
+            const k = fileKind(f.mime);
+            const mine = boot.me.isAdmin || f.byEmail.toLowerCase() === boot.me.email.toLowerCase();
+            return (
+              <div key={f.id} className={'file-card file-card--' + k} role="button" tabIndex={0} onClick={() => openFile(f)} onKeyDown={(e) => e.key === 'Enter' && openFile(f)}>
+                <span className="file-card__type">{KIND_LABEL[k]}</span>
+                <b className="ellipsis" title={f.name}>{f.name}</b>
+                <small className="faint"><span className="num">{fileSize(f.size)}</span> · {f.by} · {ago(f.date, lang)}</small>
+                {mine ? <span className="file-card__del" onClick={(e) => e.stopPropagation()}><IconButton icon="trash" size="xs" label={t('امسح', 'Delete')} onClick={() => remove(f)} /></span> : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {view ? (
+        <section ref={viewRef} className="card file-view">
+          <div className="row" style={{ marginBottom: 10 }}>
+            <h3 className="grow ellipsis" style={{ margin: 0 }}>{view.f.name}</h3>
+            {view.url ? <a className="btn btn--sm" href={view.url} download={view.f.name}><Icon name="download" />{t('نزّل', 'Download')}</a> : null}
+            <IconButton icon="close" size="sm" label={t('إغلاق', 'Close')} onClick={() => setView(null)} />
+          </div>
+          {view.error ? <p className="hint hint--warn">{view.error}</p>
+            : !view.url ? <Skel h={280} />
+              : view.mime?.startsWith('image/') ? <img src={view.url} alt={view.f.name} className="file-view__img" />
+                : view.mime === 'application/pdf' ? <iframe src={view.url} title={view.f.name} className="file-view__pdf" />
+                  : <p className="hint">{t('المعاينة متاحة للصور والـ PDF بس. نزّل الملف عشان تفتحه.', 'Preview is available for images and PDFs. Download the file to open it.')}</p>}
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 function DocsTab({ det }: { det: LeadDetail }) {
   const { t, lang } = useI18n();
   const [open, setOpen] = useState<{ title: string; body: string } | null>(null);
@@ -297,9 +411,11 @@ function DocsTab({ det }: { det: LeadDetail }) {
     ...(det.lead.notes ? [{ title: t('ملاحظات', 'Notes'), body: det.lead.notes, date: det.lead.updated }] : []),
     ...det.readiness.map((r) => ({ title: t('فحص الجاهزية', 'Readiness quiz') + ' ' + r.score, body: r.level + ' · ' + t('أضعف نقطة: ', 'weakest: ') + r.weakest, date: r.date }))
   ].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-  if (!docs.length) return <Empty title={t('مفيش مستندات لسه', 'No documents yet')}>{t('الإيميلات ونتايج الاجتماعات والروابط بتظهر هنا. لينكات Google Drive تقدر تحطها في الملاحظات.', 'Emails, meeting outcomes and links show up here. Add Google Drive links in the notes.')}</Empty>;
+  if (!docs.length) return <><FilesSection det={det} />{(det.files || []).length ? null : <Empty title={t('مفيش مستندات لسه', 'No documents yet')}>{t('الملفات اللي بترفعها، والإيميلات ونتايج الاجتماعات والروابط بتظهر هنا.', 'Uploaded files, emails, meeting outcomes and links show up here.')}</Empty>}</>;
   return (
     <>
+      <FilesSection det={det} />
+      <div className="sec-head" style={{ marginBottom: 10 }}><h3 style={{ margin: 0 }}>{t('من سجل العميل', 'From the client record')}</h3></div>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
         {docs.map((d, i) => (
           <div key={i} className="doc" style={{ width: 'auto' }} role="button" tabIndex={0} onClick={() => (d.href ? window.open(d.href, '_blank', 'noopener') : setOpen(d))} onKeyDown={(e) => e.key === 'Enter' && (d.href ? window.open(d.href, '_blank', 'noopener') : setOpen(d))}>

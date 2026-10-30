@@ -51,7 +51,7 @@ function currentUser_() {
   const email = String(SESSION_EMAIL || activeEmail_()).toLowerCase();
   const row = teamMember_(email);
   if (!row) return null;
-  return { email: email, name: String(row.name || email.split('@')[0]), role: String(row.role || ''), isAdmin: row.role === ADMIN_ROLE };
+  return { email: email, name: String(row.name || email.split('@')[0]), role: String(row.role || ''), isAdmin: row.role === ADMIN_ROLE, emailOff: splitList_(row.emailOff) };
 }
 
 function requireUser_() {
@@ -200,7 +200,8 @@ function crmBootstrap() {
     team: table_('TEAM').rows.filter((r) => /^(نعم|yes|true|1)$/i.test(String(r.active).trim())).map((r) => ({ name: r.name, email: r.email, role: r.role, whatsapp: r.whatsapp })),
     settings: {
       brand: setting_('BRAND') || 'Magmafy', teamWhatsapp: setting_('TEAM_WHATSAPP'), siteUrl: setting_('SITE_URL'), crmUrl: setting_('CRM_URL'),
-      staleDays: Number(setting_('STALE_DAYS')) || 7, chatPollSeconds: Math.max(5, Number(setting_('CHAT_POLL_SECONDS')) || 10), sheetUrl: ss_().getUrl()
+      staleDays: Number(setting_('STALE_DAYS')) || 7, chatPollSeconds: Math.max(5, Number(setting_('CHAT_POLL_SECONDS')) || 10), sheetUrl: ss_().getUrl(),
+      emailDigest: digestMode_(), filesReady: /^https:\/\/script\.google\.com\//.test(setting_('FILES_URL')) && setting_('FILES_SECRET').length >= 32
     },
     templates: table_('TEMPLATES').rows.filter((t) => me.isAdmin || !/^(لا|no|false|0)$/i.test(String(t.active == null ? '' : t.active).trim())),
     leads: leads,
@@ -221,7 +222,8 @@ function crmLead(id) {
     activities: table_('ACTIVITY').rows.filter((a) => a.leadId === id).reverse(),
     tasks: table_('TASKS').rows.filter((t) => t.leadId === id),
     bookings: table_('BOOKINGS').rows.filter((b) => b.leadId === id),
-    readiness: table_('READINESS').rows.filter((r) => r.leadId === id)
+    readiness: table_('READINESS').rows.filter((r) => r.leadId === id),
+    files: leadFiles_(id)
   });
 }
 

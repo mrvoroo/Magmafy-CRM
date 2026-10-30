@@ -3,7 +3,7 @@
  * (SpreadsheetApp, PropertiesService, CacheService, LockService, Utilities, MailApp, Session, ContentService …),
  * so Code.gs + Crm.gs + Api.gs can run in Node exactly as written and be checked against the site's schemas.
  */
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import vm from 'node:vm';
@@ -72,6 +72,98 @@ export class Spreadsheet {
   setSpreadsheetTimeZone() {} setSpreadsheetLocale() {} setActiveSheet() {} moveActiveSheet() {} toast() {}
 }
 
+const signed = (buf: Buffer) => Array.from(buf).map((b) => (b > 127 ? b - 256 : b));
+const unsigned = (bytes: number[]) => Buffer.from(bytes.map((b) => b & 255));
+
+class Blob {
+  constructor(public bytes: number[], public mime = 'application/octet-stream', public name = 'file') {}
+  getBytes() { return this.bytes; } getContentType() { return this.mime; } getName() { return this.name; }
+  getDataAsString() { return unsigned(this.bytes).toString('utf8'); }
+}
+
+/** Shared Apps Script Utilities (both scripts use the same signing helpers). */
+export const utilities = {
+  formatDate: (d: Date, tz: string, p: string) => fmt(d, tz, p), getUuid: () => randomUUID(),
+  computeDigest: (_a: unknown, s: string) => signed(createHash('sha256').update(s, 'utf8').digest()),
+  computeHmacSha256Signature: (text: string, key: string) => signed(createHmac('sha256', key).update(text, 'utf8').digest()),
+  base64EncodeWebSafe: (s: string) => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+  base64DecodeWebSafe: (s: string) => signed(Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')),
+  base64Decode: (s: string) => signed(Buffer.from(s, 'base64')),
+  base64Encode: (bytes: number[]) => unsigned(bytes).toString('base64'),
+  newBlob: (bytes: number[], mime?: string, name?: string) => new Blob(bytes, mime, name),
+  DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }
+};
+
+/** An in-memory Google Drive for the files script. */
+export class Drive {
+  folders = new Map<string, { id: string; name: string; parent: string; trashed: boolean }>();
+  files = new Map<string, { id: string; name: string; parent: string; blob: Blob; trashed: boolean; description: string }>();
+  private seq = 0;
+  private id(p: string) { return p + (++this.seq); }
+  constructor() { this.folders.set('root', { id: 'root', name: 'My Drive', parent: '', trashed: false }); }
+  folder(id: string) {
+    const f = this.folders.get(id);
+    if (!f) throw new Error('No item with the given ID could be found');
+    const drive = this;
+    const iter = <T>(list: T[]) => { let i = 0; return { hasNext: () => i < list.length, next: () => list[i++] }; };
+    return {
+      getId: () => f.id, getName: () => f.name, isTrashed: () => f.trashed,
+      getFoldersByName: (n: string) => iter([...drive.folders.values()].filter((x) => x.parent === f.id && x.name === n && !x.trashed).map((x) => drive.folder(x.id))),
+      createFolder: (n: string) => { const nf = { id: drive.id('fo'), name: n, parent: f.id, trashed: false }; drive.folders.set(nf.id, nf); return drive.folder(nf.id); },
+      createFile: (b: Blob) => { const nf = { id: drive.id('fi'), name: b.name, parent: f.id, blob: b, trashed: false, description: '' }; drive.files.set(nf.id, nf); return drive.file(nf.id); }
+    };
+  }
+  file(id: string) {
+    const f = this.files.get(id);
+    if (!f) throw new Error('No item with the given ID could be found');
+    const drive = this;
+    return {
+      getId: () => f.id, getName: () => f.name, getUrl: () => 'https://drive.google.com/file/d/' + f.id + '/view',
+      setDescription: (d: string) => { f.description = d; }, getBlob: () => f.blob, setTrashed: (v: boolean) => { f.trashed = v; },
+      getParents: () => { let done = false; return { hasNext: () => !done, next: () => { done = true; return drive.folder(f.parent); } }; }
+    };
+  }
+  api() {
+    return { getRootFolder: () => this.folder('root'), getFolderById: (id: string) => this.folder(id), getFileById: (id: string) => this.file(id) };
+  }
+}
+
+function services(props: Map<string, string>, cache: Map<string, { v: string; until: number }>) {
+  return {
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (k: string) => (props.has(k) ? props.get(k)! : null), setProperty: (k: string, v: string) => { props.set(k, String(v)); },
+        deleteProperty: (k: string) => { props.delete(k); }, getProperties: () => Object.fromEntries(props)
+      })
+    },
+    CacheService: {
+      getScriptCache: () => ({
+        get: (k: string) => { const e = cache.get(k); return e && e.until > Date.now() ? e.v : null; },
+        put: (k: string, v: string, s = 600) => { cache.set(k, { v: String(v), until: Date.now() + s * 1000 }); },
+        remove: (k: string) => { cache.delete(k); }
+      })
+    },
+    LockService: { getScriptLock: () => ({ waitLock() {}, tryLock: () => true, releaseLock() {} }) },
+    Utilities: utilities,
+    ContentService: { createTextOutput: (t: string) => ({ setMimeType() { return this; }, getContent: () => t, text: t }), MimeType: { JSON: 'json' } }
+  };
+}
+
+/** The «Magmafy Files» script on its own account, with its own properties and an in-memory Drive. */
+export function createFilesSim(secret: string) {
+  const drive = new Drive();
+  const ctx: Record<string, unknown> = { console, DriveApp: drive.api(), ...services(new Map(), new Map()) };
+  vm.createContext(ctx);
+  const src = readFileSync(join(__dirname, '..', 'files', 'Files.gs'), 'utf8').replace("'PASTE_FILES_SECRET_HERE'", JSON.stringify(secret));
+  vm.runInContext(src + '\n;globalThis.__run = (name, args) => eval(name).apply(null, args || []);', ctx, { filename: 'Files.gs' });
+  const run = (name: string, ...args: unknown[]) => (ctx as { __run: (n: string, a: unknown[]) => unknown }).__run(name, args);
+  return {
+    drive,
+    post(body: Record<string, unknown>) { return JSON.parse((run('doPost', { postData: { contents: JSON.stringify(body) } }) as { text: string }).text) as Record<string, unknown>; },
+    get() { return JSON.parse((run('doGet', {}) as { text: string }).text); }
+  };
+}
+
 function fmt(d: Date, tz: string, p: string) {
   const off = tz === 'Asia/Riyadh' ? 3 : 0;
   const x = new Date(d.getTime() + off * 3600e3);
@@ -92,6 +184,13 @@ export function createSim(opts: { owner: string }) {
   const mails: Record<string, unknown>[] = [];
   let activeUser = '';
 
+  const triggers: { fn: string; id: string }[] = [];
+  const triggerBuilder = (fn: string) => {
+    const b: Record<string, unknown> = {};
+    ['timeBased', 'everyMinutes', 'everyHours', 'atHour', 'everyDays', 'inTimezone', 'forSpreadsheet', 'onEdit'].forEach((k) => { b[k] = () => b; });
+    b.create = () => { const t = { fn, id: 'trg' + (triggers.length + 1) }; triggers.push(t); return t; };
+    return b;
+  };
   const builder = () => { const b: Record<string, () => unknown> = {}; ['requireValueInRange', 'setAllowInvalid', 'whenTextEqualTo', 'setBackground', 'setFontColor', 'setRanges'].forEach((k) => { b[k] = () => b; }); b.build = () => ({}); return b; };
   const ctx: Record<string, unknown> = {
     console,
@@ -99,30 +198,14 @@ export function createSim(opts: { owner: string }) {
       getActive: () => ss, openById: () => ss, getUi: () => ({ createMenu: () => ({ addItem() { return this; }, addSeparator() { return this; }, addToUi() {} }) }),
       newDataValidation: builder, newConditionalFormatRule: builder
     },
-    PropertiesService: {
-      getScriptProperties: () => ({
-        getProperty: (k: string) => (props.has(k) ? props.get(k)! : null), setProperty: (k: string, v: string) => { props.set(k, String(v)); },
-        deleteProperty: (k: string) => { props.delete(k); }, getProperties: () => Object.fromEntries(props)
-      })
-    },
-    CacheService: {
-      getScriptCache: () => ({
-        get: (k: string) => { const e = cache.get(k); return e && e.until > Date.now() ? e.v : null; },
-        put: (k: string, v: string, s = 600) => { cache.set(k, { v: String(v), until: Date.now() + s * 1000 }); },
-        remove: (k: string) => { cache.delete(k); }
-      })
-    },
-    LockService: { getScriptLock: () => ({ waitLock() {}, tryLock: () => true, releaseLock() {} }) },
-    Utilities: {
-      formatDate: fmt, getUuid: () => randomUUID(),
-      computeDigest: (_a: unknown, s: string) => Array.from(createHash('sha256').update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
-      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }
-    },
-    MailApp: { sendEmail: (m: Record<string, unknown>) => { mails.push(m); } },
+    ...services(props, cache),
+    MailApp: { sendEmail: (m: Record<string, unknown>) => { mails.push(m); }, getRemainingDailyQuota: () => 100 },
     Session: { getActiveUser: () => ({ getEmail: () => activeUser }), getEffectiveUser: () => ({ getEmail: () => opts.owner }) },
-    ContentService: { createTextOutput: (t: string) => ({ setMimeType() { return this; }, getContent: () => t, text: t }), MimeType: { JSON: 'json' } },
     HtmlService: { createHtmlOutputFromFile: () => ({ setTitle() { return this; }, addMetaTag() { return this; }, setFaviconUrl() { return this; } }) },
-    ScriptApp: { getProjectTriggers: () => [] },
+    ScriptApp: {
+      getProjectTriggers: () => triggers.map((t) => ({ getHandlerFunction: () => t.fn, getUniqueId: () => t.id })),
+      newTrigger: (fn: string) => triggerBuilder(fn), deleteTrigger: (t: { getUniqueId: () => string }) => { const i = triggers.findIndex((x) => x.id === t.getUniqueId()); if (i >= 0) triggers.splice(i, 1); }
+    },
     CalendarApp: {
       getCalendarById: () => ({ getEvents: () => [], createEvent: () => ({ getId: () => 'EV1' }), getEventById: () => null }),
       getDefaultCalendar: () => ({ getEvents: () => [] }), GuestStatus: { NO: 'NO' }
@@ -136,7 +219,9 @@ export function createSim(opts: { owner: string }) {
   const run = (name: string, ...args: unknown[]) => (ctx as { __run: (n: string, a: unknown[]) => unknown }).__run(name, args);
 
   return {
-    ss, props, mails, run,
+    ss, props, mails, run, triggers,
+    /** Runs a time-trigger function the way Apps Script does (with its trigger id). */
+    trigger(fn: string) { const t = triggers.find((x) => x.fn === fn); if (!t) throw new Error('no trigger for ' + fn); return run(fn, { triggerUid: t.id }); },
     as(email: string) { activeUser = email; },
     /** What the site does: POST {action:'crm', fn, args, token} and read the JSON envelope. */
     post(body: Record<string, unknown>) {

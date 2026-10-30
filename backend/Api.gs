@@ -6,7 +6,7 @@
  *   → { ok: true, data }  or  { ok: false, code, error }
  * codes: SESSION_EXPIRED · FORBIDDEN · UNKNOWN_FUNCTION · APP_ERROR (Arabic message for the user) · SERVER
  *
- * New tabs (made by «① تجهيز الشيت»): الإعلانات · القراءات · المحادثات · الرسائل · الإشعارات · طلبات الانضمام · سجل التعديلات
+ * New tabs (made by «① تجهيز الشيت»): الإعلانات · القراءات · المحادثات · الرسائل · الإشعارات · طلبات الانضمام · سجل التعديلات · الملفات
  * The exact shape of every answer is the Zod schema in the site repo: src/api/schemas.ts.
  */
 
@@ -24,8 +24,10 @@ function crmGateway_(body) {
     else if (fn === 'crmLogout') data = crmLogout(args[0]);
     else if (fn === 'crmRequestAccess') data = crmRequestAccess(args[0]);
     else data = crmCall(body.token, fn, args);
+    try { flushInstantMail_(); } catch (err) { logError_('mail:flush', err, {}); }
     return { ok: true, data: data };
   } catch (err) {
+    MAIL_NOW_ = [];
     const msg = String((err && err.message) || err);
     if (msg === 'SESSION_EXPIRED') return { ok: false, code: 'SESSION_EXPIRED', error: 'الجلسة خلصت، سجّل دخول تاني' };
     if (msg === 'unknown_function') return { ok: false, code: 'UNKNOWN_FUNCTION', error: 'unknown_function' };
@@ -48,7 +50,8 @@ function crmApi_() {
     crmAnnouncements: crmAnnouncements, crmSaveAnnouncement: crmSaveAnnouncement, crmAckAnnouncement: crmAckAnnouncement,
     crmAnnouncementStats: crmAnnouncementStats, crmRemindAnnouncement: crmRemindAnnouncement,
     crmThreads: crmThreads, crmThread: crmThread, crmSendMessage: crmSendMessage, crmEditMessage: crmEditMessage,
-    crmSaveThread: crmSaveThread, crmAccessRequests: crmAccessRequests, crmHandleAccess: crmHandleAccess, crmAudit: crmAudit
+    crmSaveThread: crmSaveThread, crmAccessRequests: crmAccessRequests, crmHandleAccess: crmHandleAccess, crmAudit: crmAudit,
+    crmFileTicket: crmFileTicket, crmAttachFile: crmAttachFile, crmDeleteFile: crmDeleteFile, crmSaveMyPrefs: crmSaveMyPrefs
   };
 }
 
@@ -125,8 +128,9 @@ function notify_(emails, n, except) {
       e = String(e || '').trim().toLowerCase();
       if (!e || e === except || seen[e]) return;
       seen[e] = 1;
-      t.append({ id: seqId_('N', 5), date: new Date(), toEmail: e, kind: n.kind, title: String(n.title || '').slice(0, 200), refType: n.refType || '', refId: n.refId || '', by: n.by || '', readAt: '' });
+      t.append({ id: seqId_('N', 5), date: new Date(), toEmail: e, kind: n.kind, title: String(n.title || '').slice(0, 200), refType: n.refType || '', refId: n.refId || '', by: n.by || '', readAt: '', emailedAt: '' });
       bump_(e);
+      queueInstantMail_(e, n);
     });
   } catch (err) { logError_('notify', err, { kind: n && n.kind }); }
 }
@@ -149,6 +153,7 @@ function notifyNewBooking_(lead, booking) {
     });
     auditLog_({ email: '', name: 'الموقع' }, 'الموقع', 'إنشاء', 'اجتماع', booking.id, null, booking);
   });
+  flushInstantMail_();
 }
 
 /** Called by handleEdit_ (Code.gs): records a hand edit in the sheet. */
@@ -156,7 +161,7 @@ function auditSheetEdit_(e, sheetName, header) {
   const map = {};
   map[SHEET.LEADS] = ['عميل', 'ID']; map[SHEET.BOOKINGS] = ['اجتماع', 'ID']; map[SHEET.TASKS] = ['مهمة', 'ID'];
   map[SHEET.TEMPLATES] = ['قالب', 'ID']; map[SHEET.TEAM] = ['عضو', 'البريد']; map[SHEET.SETTINGS] = ['إعداد', 'الإعداد'];
-  map[SHEET.ANNOUNCEMENTS] = ['إعلان', 'ID'];
+  map[SHEET.ANNOUNCEMENTS] = ['إعلان', 'ID']; map[SHEET.FILES] = ['ملف', 'ID'];
   const m = map[sheetName];
   if (!m || String(e.oldValue == null ? '' : e.oldValue) === String(e.value == null ? '' : e.value)) return;
   const sh = e.range.getSheet();
@@ -696,6 +701,9 @@ function crmSaveSettings(v) {
       if (k === 'CHAT_POLL_SECONDS' && val && Number(val) < 5) throw new Error('أقل قيمة 5 ثواني');
       if (k === 'DEFAULT_OWNER' && val && team.indexOf(val) < 0) throw new Error('المسؤول لازم يكون من الفريق');
       if ((k === 'CRM_URL' || k === 'SITE_URL') && val && !/^https:\/\//.test(val)) throw new Error('الرابط لازم يبدأ بـ https://');
+      if (k === 'FILES_URL' && val && !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(val)) throw new Error('رابط سكريبت الملفات لازم يكون رابط Web app وآخره /exec');
+      if (k === 'FILES_SECRET' && val.length < 32) throw new Error('المفتاح السري لازم يكون 32 حرف على الأقل');
+      if (k === 'EMAIL_DIGEST_MINUTES' && DIGEST_CHOICES.indexOf(val) < 0) throw new Error('اختار توقيت من القايمة');
       if (str_(row.value) !== val) {
         auditLog_(me, 'CRM', 'تعديل', 'إعداد', k, { value: str_(row.value) }, { value: val });
         t.update(row._row, { value: val });
@@ -704,6 +712,7 @@ function crmSaveSettings(v) {
     });
     SETTINGS_CACHE = null;
     CacheService.getScriptCache().remove('busy');
+    if ('EMAIL_DIGEST_MINUTES' in v) { try { ensureDigestTrigger_(); } catch (err) { logError_('trigger:digest', err, {}); } }
     return ser_({ ok: true, settings: t.rows.map((r) => ({ key: r.key, value: str_(r.value), help: r.help })) });
   });
 }
@@ -778,4 +787,236 @@ function crmAudit(q) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(q.to || '')) { const to = riyadhToUtc_(q.to, '00:00').getTime() + 86400000; items = items.filter((a) => ms_(a.date) < to); }
   items = items.slice().sort(byDateDesc_('date'));
   return pageOf_(items, q, 'date', 100);
+}
+
+/* =========================================================================
+ * 10. Files on Google Drive (stored by the «Magmafy Files» script on the Drive account with the space)
+ *
+ * The site never talks to Drive with the CRM's rights. It asks here for a ticket (who, which lead, which file,
+ * 10 minutes), sends the file to FILES_URL with it, gets a signed receipt back and hands that receipt to
+ * crmAttachFile, which records the file in «الملفات». Same secret (FILES_SECRET) on both scripts.
+ * ========================================================================= */
+
+const FILE_MAX_BYTES = 20 * 1024 * 1024;
+const FILE_MIME_OK = /^(application\/pdf|image\/(jpeg|png|webp|gif|heic|heif)|application\/(msword|vnd\.ms-excel|vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.[\w.-]+|zip|x-zip-compressed)|text\/(plain|csv))$/;
+
+function filesSecret_() {
+  const s = setting_('FILES_SECRET');
+  if (!s || s.length < 32) throw new Error('رفع الملفات لسه مش متفعّل: شغّل «① تجهيز الشيت» وحط FILES_URL في الإعدادات');
+  return s;
+}
+function filesUrl_() {
+  const u = setting_('FILES_URL');
+  if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(u)) throw new Error('رفع الملفات لسه مش متفعّل: الأدمن يحط رابط سكريبت الملفات في FILES_URL');
+  return u;
+}
+function filesHmac_(text) {
+  return Utilities.computeHmacSha256Signature(text, filesSecret_(), Utilities.Charset.UTF_8)
+    .map((x) => ('0' + (x & 255).toString(16)).slice(-2)).join('');
+}
+function filesSign_(obj) {
+  const body = Utilities.base64EncodeWebSafe(JSON.stringify(obj), Utilities.Charset.UTF_8);
+  return body + '.' + filesHmac_(body);
+}
+function filesVerify_(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 2 || filesHmac_(parts[0]) !== parts[1]) throw new Error('الإيصال مش سليم');
+  const t = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString('UTF-8'));
+  if (!t.exp || t.exp < Date.now()) throw new Error('الإيصال انتهى، ارفع الملف تاني');
+  return t;
+}
+
+function fileView_(f) { const v = Object.assign({}, f); delete v._row; return v; }
+function leadFiles_(leadId) {
+  try { return table_('FILES').rows.filter((f) => f.leadId === leadId && !f.deletedAt).sort(byDateDesc_('date')).map(fileView_); } catch (_) { return []; }
+}
+
+/**
+ * A 10-minute ticket for one action on one lead's files.
+ * q = { op:'upload', leadId, name, mime, size } | { op:'view'|'trash', id }  (id = the «الملفات» row)
+ */
+function crmFileTicket(q) {
+  const me = requireUser_();
+  q = q || {};
+  const url = filesUrl_();
+  const base = { email: me.email, exp: Date.now() + 10 * 60000, n: Utilities.getUuid() };
+  if (q.op === 'upload') {
+    const lead = visibleLead_(me, q.leadId);
+    const size = Number(q.size) || 0;
+    if (!size) throw new Error('الملف فاضي');
+    if (size > FILE_MAX_BYTES) throw new Error('الملف أكبر من 20 ميجا');
+    if (!FILE_MIME_OK.test(String(q.mime || ''))) throw new Error('نوع الملف مش مسموح. المسموح: PDF، صور، Word، Excel، PowerPoint، ZIP، نص');
+    return { url: url, maxBytes: FILE_MAX_BYTES, ticket: filesSign_(Object.assign(base, { op: 'upload', leadId: lead.id, leadName: lead.business || lead.name || '', name: clean_(q.name, 180) || 'file', mime: q.mime, size: size })) };
+  }
+  if (q.op === 'view' || q.op === 'trash') {
+    const f = table_('FILES').rows.filter((x) => x.id === q.id && !x.deletedAt)[0];
+    if (!f) throw new Error('الملف مش موجود');
+    visibleLead_(me, f.leadId);
+    if (q.op === 'trash' && !me.isAdmin && String(f.byEmail).toLowerCase() !== me.email) throw new Error('تقدر تمسح ملفاتك بس');
+    return { url: url, ticket: filesSign_(Object.assign(base, { op: q.op, leadId: f.leadId, fileId: f.driveId })) };
+  }
+  throw new Error('طلب غير معروف');
+}
+
+/** Records an uploaded file from the receipt «Magmafy Files» signed. */
+function crmAttachFile(receipt) {
+  const me = requireUser_();
+  const r = filesVerify_(receipt);
+  if (r.op !== 'receipt' || String(r.email).toLowerCase() !== me.email) throw new Error('الإيصال مش سليم');
+  const lead = visibleLead_(me, r.leadId);
+  return withLock_(() => {
+    const t = table_('FILES');
+    const dup = t.rows.filter((x) => x.driveId === r.fileId)[0];
+    if (dup) return ser_({ ok: true, file: fileView_(dup) });
+    const row = { id: seqId_('F', 4), date: new Date(), leadId: lead.id, name: clean_(r.name, 180), mime: r.mime, size: Number(r.size) || 0, driveId: r.fileId, url: r.url, by: me.name, byEmail: me.email, deletedAt: '', deletedBy: '' };
+    t.append(row);
+    logActivity_(lead, 'ملاحظة', 'داخلي', 'ملف: ' + row.name, row.url, me.name);
+    auditLog_(me, 'CRM', 'إنشاء', 'ملف', row.id, null, row);
+    const ownerEmail = lead.owner ? emailOfName_(lead.owner) : '';
+    if (ownerEmail && ownerEmail !== me.email) notify_([ownerEmail], { kind: 'ملف', title: me.name + ' رفع ملف لـ ' + (lead.business || lead.name) + ': ' + row.name, refType: 'عميل', refId: lead.id, by: me.name }, me.email);
+    return ser_({ ok: true, file: row });
+  });
+}
+
+/** Hides the file in the CRM and returns a ticket the site uses to move it to Drive's bin (30 days). */
+function crmDeleteFile(id) {
+  const me = requireUser_();
+  return withLock_(() => {
+    const t = table_('FILES');
+    const f = t.rows.filter((x) => x.id === id && !x.deletedAt)[0];
+    if (!f) throw new Error('الملف مش موجود');
+    visibleLead_(me, f.leadId);
+    if (!me.isAdmin && String(f.byEmail).toLowerCase() !== me.email) throw new Error('تقدر تمسح ملفاتك بس');
+    const before = Object.assign({}, f);
+    t.update(f._row, { deletedAt: new Date(), deletedBy: me.name });
+    auditLog_(me, 'CRM', 'حذف', 'ملف', id, before, null);
+    let trash = null;
+    try { trash = { url: filesUrl_(), ticket: filesSign_({ op: 'trash', leadId: f.leadId, fileId: f.driveId, email: me.email, exp: Date.now() + 10 * 60000, n: Utilities.getUuid() }) }; } catch (_) { /* files script not set up: hidden in the CRM only */ }
+    return { ok: true, trash: trash };
+  });
+}
+
+/* =========================================================================
+ * 11. Email notifications
+ *
+ * Every bell notification can also reach the person by email. EMAIL_DIGEST_MINUTES (set by an admin from the site)
+ * decides when: 0 = right away, 5 / 10 / 15 / 30 / 60 = one email with everything still unread, «off» = never.
+ * Urgent announcements always go right away. Each person can mute kinds (TEAM column «إيقاف إيميلات»).
+ * A notification read in the site before the email goes out is never emailed.
+ * ========================================================================= */
+
+const EMAIL_KINDS = ['إعلان', 'منشن', 'رسالة', 'عميل جديد', 'مهمة', 'اجتماع جديد', 'طلب انضمام', 'ملف'];
+const DIGEST_CHOICES = ['0', '5', '10', '15', '30', '60', 'off'];
+let MAIL_NOW_ = []; // emails to send at the end of this request (instant mode / urgent)
+
+function digestMode_() { const v = String(setting_('EMAIL_DIGEST_MINUTES') || '15').trim(); return DIGEST_CHOICES.indexOf(v) >= 0 ? v : '15'; }
+
+/** Called by notify_: decide whether this one leaves right away. */
+function queueInstantMail_(email, n) {
+  const urgent = n.kind === 'إعلان' && /^🔴/.test(String(n.title || ''));
+  const mode = digestMode_();
+  if (urgent || mode === '0') MAIL_NOW_.push({ email: email, urgent: urgent });
+}
+
+/** Sends what queueInstantMail_ collected. Runs after the lock is released (MailApp is slow). */
+function flushInstantMail_() {
+  const queue = MAIL_NOW_;
+  MAIL_NOW_ = [];
+  if (!queue.length) return;
+  const seen = {};
+  const list = queue.filter((q) => (seen[q.email] ? false : (seen[q.email] = 1)));
+  try { withLock_(() => list.forEach((q) => mailUnread_(q.email, q.urgent))); } catch (err) { logError_('mail:instant', err, {}); }
+}
+
+function linkFor_(n) {
+  const base = String(setting_('CRM_URL') || '').replace(/#.*$/, '').replace(/\/?$/, '/');
+  if (!base || base === '/') return '';
+  const route = n.refType === 'إعلان' ? 'announcements/' + n.refId
+    : n.refType === 'محادثة' ? 'inbox/' + n.refId
+      : n.refType === 'عميل' ? 'leads/' + n.refId
+        : n.refType === 'طلب' ? 'settings/access'
+          : n.refType === 'مهمة' ? 'tasks' : '';
+  return base + '#/' + route;
+}
+
+/**
+ * Emails one person what is still unread and not yet emailed (respecting their muted kinds).
+ * urgentOnly: just the urgent announcements. Hold the script lock. Returns how many items went out.
+ */
+function mailUnread_(email, urgentOnly) {
+  email = String(email).toLowerCase();
+  const member = table_('TEAM').rows.filter((r) => String(r.email).toLowerCase() === email && yesv_(r.active))[0];
+  if (!member) return 0;
+  const muted = splitList_(member.emailOff);
+  const t = table_('NOTIFICATIONS');
+  const items = t.rows.filter((n) => String(n.toEmail).toLowerCase() === email && !n.readAt && !n.emailedAt)
+    .filter((n) => {
+      const urgent = n.kind === 'إعلان' && /^🔴/.test(String(n.title));
+      return urgentOnly ? urgent : urgent || muted.indexOf(n.kind) < 0;
+    })
+    .sort((a, b) => ms_(a.date) - ms_(b.date));
+  if (!items.length) return 0;
+  // Keep a little of the daily quota for sign-in codes and booking confirmations.
+  if (MailApp.getRemainingDailyQuota() < 10) { logError_('mail:quota', 'low daily quota, digest postponed', { to: email }); return 0; }
+  const brand = setting_('BRAND') || 'Magmafy';
+  const crm = linkFor_({ refType: '' });
+  const shown = items.slice(0, 25);
+  const rows = shown.map((n) => {
+    const href = linkFor_(n);
+    const when = Utilities.formatDate(toDate_(n.date) || new Date(), 'Asia/Riyadh', 'HH:mm');
+    return '<tr><td style="padding:10px 0;border-bottom:1px solid #eee3f3">' +
+      '<div style="font-size:12px;color:#8f7ea3">' + esc_(n.kind) + ' · ' + when + (n.by ? ' · ' + esc_(n.by) : '') + '</div>' +
+      '<div style="font-size:15px;margin-top:2px">' + (href ? '<a href="' + esc_(href) + '" style="color:#1a0f27;text-decoration:none">' + esc_(n.title) + '</a>' : esc_(n.title)) + '</div></td></tr>';
+  }).join('');
+  const more = items.length > shown.length ? '<p style="color:#8f7ea3">و' + (items.length - shown.length) + ' كمان في الموقع.</p>' : '';
+  const urgent = items.some((n) => n.kind === 'إعلان' && /^🔴/.test(String(n.title)));
+  const subject = (urgent ? '🔴 ' : '') + (items.length === 1 ? items[0].title : items.length + ' تنبيهات جديدة في ' + brand + ' CRM');
+  MailApp.sendEmail({
+    to: email, name: brand + ' CRM', subject: String(subject).slice(0, 180),
+    body: items.map((n) => n.kind + ': ' + n.title).join('\n') + (crm ? '\n\n' + crm : ''),
+    htmlBody: emailShell_(true, 'أهلاً ' + esc_(String(member.name).split(' ')[0]) + '، ده اللي جالك ومالحقتش تشوفه:' +
+      '<table style="width:100%;border-collapse:collapse;margin:10px 0">' + rows + '</table>' + more +
+      (crm ? button_(crm, 'افتح الـ CRM') : '') +
+      '<p style="color:#8f7ea3;font-size:12px">تقدر تختار إيه يوصلك على الإيميل من التفضيلات في الموقع.</p>', brand + ' CRM')
+  });
+  const now = new Date();
+  items.forEach((n) => t.update(n._row, { emailedAt: now }));
+  return items.length;
+}
+
+/** Time trigger (every 5 minutes, see ensureDigestTrigger_): sends the digest when its interval is due. */
+function emailDigest(e) {
+  requireOperator_(e);
+  const mode = digestMode_();
+  if (mode === 'off') return;
+  const props = PropertiesService.getScriptProperties();
+  const last = Number(props.getProperty('LAST_DIGEST') || 0);
+  const every = mode === '0' ? 5 : Number(mode);
+  if (Date.now() - last < every * 60000 - 60000) return; // a minute of slack: triggers don't fire on the dot
+  props.setProperty('LAST_DIGEST', String(Date.now()));
+  withLock_(() => {
+    activeTeam_().forEach((m) => { try { mailUnread_(m.email, false); } catch (err) { logError_('mail:digest', err, { to: m.email }); } });
+  });
+}
+
+/** Makes sure the 5-minute trigger exists (it runs as the script owner). */
+function ensureDigestTrigger_() {
+  const has = ScriptApp.getProjectTriggers().some((t) => t.getHandlerFunction() === 'emailDigest');
+  if (!has) ScriptApp.newTrigger('emailDigest').timeBased().everyMinutes(5).create();
+}
+
+/** The signed-in person's own email preferences. */
+function crmSaveMyPrefs(p) {
+  const me = requireUser_();
+  p = p || {};
+  const off = splitList_(p.emailOff).filter((k) => EMAIL_KINDS.indexOf(k) >= 0);
+  return withLock_(() => {
+    const t = table_('TEAM');
+    const row = t.rows.filter((r) => String(r.email).toLowerCase() === me.email)[0];
+    if (!row) throw new Error('غير مصرح لك بدخول الـ CRM');
+    const before = { emailOff: str_(row.emailOff) };
+    t.update(row._row, { emailOff: off.join(', ') });
+    auditLog_(me, 'CRM', 'تعديل', 'عضو', me.email, before, { emailOff: off.join(', ') });
+    return { ok: true, emailOff: off };
+  });
 }

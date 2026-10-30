@@ -7,11 +7,15 @@ import { DAY, riyadh, todayKey, dayKey } from '../../lib/time';
 import { store } from '../../lib/storage';
 
 type Row = Record<string, string | number>;
-type Me = { email: string; name: string; role: string; isAdmin: boolean };
+type Me = { email: string; name: string; role: string; isAdmin: boolean; emailOff?: string[] };
 const KEY = 'mg-crm-mock-db-v3';
 export const MOCK_CODE = '123456';
 
 let db: Db = store.json<Db | null>(KEY, null) || buildDb();
+// Saved before files existed: add the collections without losing the rest.
+if (!db.files) db.files = [];
+if (!db.seq.F) db.seq.F = 0;
+['EMAIL_DIGEST_MINUTES', 'FILES_URL', 'FILES_SECRET'].forEach((k) => { if (!db.settings.some((x) => x.key === k)) db.settings.push(buildDb().settings.find((x) => x.key === k)!); });
 const sessions: Record<string, string> = store.json('mg-crm-mock-sessions', {});
 const save = () => { store.setJson(KEY, db); store.setJson('mg-crm-mock-sessions', sessions); };
 save();
@@ -32,7 +36,7 @@ function meOf(token: string): Me {
   if (!email) throw new AppErr('SESSION_EXPIRED', 'SESSION_EXPIRED');
   const m = member(email);
   if (!m) throw new AppErr('غير مصرح لك بدخول الـ CRM', 'FORBIDDEN');
-  return { email: m.email, name: m.name, role: m.role, isAdmin: m.role === 'أدمن' };
+  return { email: m.email, name: m.name, role: m.role, isAdmin: m.role === 'أدمن', emailOff: s((m as Row).emailOff).split(/[,،]\s*/).filter(Boolean) };
 }
 const canSee = (me: Me, l: Row) => me.isAdmin || !s(l.owner) || l.owner === me.name;
 const admins = () => db.team.filter((t) => t.role === 'أدمن' && yes(t.active)).map((t) => t.email);
@@ -283,7 +287,7 @@ const API: Record<string, Fn> = {
     return {
       me, lists: LISTS,
       team: db.team.filter((t) => yes(t.active)).map((t) => ({ name: t.name, email: t.email, role: t.role, whatsapp: t.whatsapp })),
-      settings: { brand: 'Magmafy', teamWhatsapp: '966500000000', siteUrl: 'https://killerbood.github.io/Abdallah-Magmafy/pro/', staleDays: Number(db.settings.find((x) => x.key === 'STALE_DAYS')?.value) || 7, sheetUrl: 'https://docs.google.com/spreadsheets/', chatPollSeconds: Number(db.settings.find((x) => x.key === 'CHAT_POLL_SECONDS')?.value) || 10 },
+      settings: { brand: 'Magmafy', teamWhatsapp: '966500000000', siteUrl: 'https://killerbood.github.io/Abdallah-Magmafy/pro/', staleDays: Number(db.settings.find((x) => x.key === 'STALE_DAYS')?.value) || 7, sheetUrl: 'https://docs.google.com/spreadsheets/', chatPollSeconds: Number(db.settings.find((x) => x.key === 'CHAT_POLL_SECONDS')?.value) || 10, emailDigest: s(db.settings.find((x) => x.key === 'EMAIL_DIGEST_MINUTES')?.value) || '15', filesReady: true },
       templates: db.templates.filter((t) => me.isAdmin || yes(t.active)),
       leads,
       tasks: db.tasks.filter((t) => (vis.has(t.leadId) || (!t.leadId && (me.isAdmin || t.owner === me.name))) && (t.status === 'مفتوحة' || (t.doneAt && new Date(s(t.doneAt)).getTime() > since))),
@@ -295,7 +299,7 @@ const API: Record<string, Fn> = {
   },
   crmLead: (me: Me, id: string) => {
     const lead = visibleLead(me, id);
-    return { lead, activities: db.activity.filter((a) => a.leadId === id).slice().reverse(), tasks: db.tasks.filter((t) => t.leadId === id), bookings: db.bookings.filter((b) => b.leadId === id), readiness: db.readiness.filter((r) => r.leadId === id) };
+    return { lead, activities: db.activity.filter((a) => a.leadId === id).slice().reverse(), tasks: db.tasks.filter((t) => t.leadId === id), bookings: db.bookings.filter((b) => b.leadId === id), readiness: db.readiness.filter((r) => r.leadId === id), files: db.files.filter((f) => f.leadId === id && !f.deletedAt).slice().reverse() };
   },
   crmSaveLead: (me: Me, data: Row) => saveLeadCore(me, data || {}),
   crmDeleteLead: (me: Me, id: string) => {
@@ -584,6 +588,46 @@ const API: Record<string, Fn> = {
     audit(me, 'CRM', 'تعديل', 'طلب انضمام', id, before, r, s(d.reason));
     return { ok: true };
   },
+  crmFileTicket: (me: Me, q: Row) => {
+    const n = Math.random().toString(36).slice(2);
+    if (q.op === 'upload') {
+      const lead = visibleLead(me, s(q.leadId));
+      if (!Number(q.size)) throw new AppErr('الملف فاضي');
+      if (Number(q.size) > 20 * 1024 * 1024) throw new AppErr('الملف أكبر من 20 ميجا');
+      return { url: 'mock:files', maxBytes: 20 * 1024 * 1024, ticket: JSON.stringify({ op: 'upload', leadId: lead.id, email: me.email, name: s(q.name), mime: s(q.mime), size: Number(q.size), n }) };
+    }
+    const f = db.files.find((x) => x.id === q.id && !x.deletedAt);
+    if (!f) throw new AppErr('الملف مش موجود');
+    visibleLead(me, s(f.leadId));
+    if (q.op === 'trash' && !me.isAdmin && f.byEmail !== me.email) throw new AppErr('تقدر تمسح ملفاتك بس');
+    return { url: 'mock:files', ticket: JSON.stringify({ op: q.op, leadId: f.leadId, fileId: f.driveId, email: me.email, n }) };
+  },
+  crmAttachFile: (me: Me, receipt: string) => {
+    const r = JSON.parse(receipt) as Row;
+    if (r.op !== 'receipt' || r.email !== me.email) throw new AppErr('الإيصال مش سليم');
+    const lead = visibleLead(me, s(r.leadId));
+    const row: Row = { id: nextId('F', 'F'), date: nowIso(), leadId: s(lead.id), name: s(r.name), mime: s(r.mime), size: Number(r.size), driveId: s(r.fileId), url: 'https://drive.google.com/file/d/' + r.fileId, by: me.name, byEmail: me.email, deletedAt: '', deletedBy: '' };
+    db.files.push(row);
+    logActivity(lead, 'ملاحظة', 'داخلي', 'ملف: ' + row.name, s(row.url), me.name);
+    audit(me, 'CRM', 'إنشاء', 'ملف', s(row.id), null, row);
+    return { ok: true, file: row };
+  },
+  crmDeleteFile: (me: Me, id: string) => {
+    const f = db.files.find((x) => x.id === id && !x.deletedAt);
+    if (!f) throw new AppErr('الملف مش موجود');
+    if (!me.isAdmin && f.byEmail !== me.email) throw new AppErr('تقدر تمسح ملفاتك بس');
+    const before = { ...f };
+    f.deletedAt = nowIso(); f.deletedBy = me.name;
+    audit(me, 'CRM', 'حذف', 'ملف', id, before, null);
+    return { ok: true, trash: { url: 'mock:files', ticket: JSON.stringify({ op: 'trash', fileId: f.driveId }) } };
+  },
+  crmSaveMyPrefs: (me: Me, p: Row) => {
+    const kinds = ['إعلان', 'منشن', 'رسالة', 'عميل جديد', 'مهمة', 'اجتماع جديد', 'طلب انضمام', 'ملف'];
+    const off = (Array.isArray(p.emailOff) ? (p.emailOff as unknown as string[]) : []).filter((k) => kinds.includes(k));
+    const m = db.team.find((t) => t.email === me.email)!;
+    (m as Row).emailOff = off.join(', ');
+    return { ok: true, emailOff: off };
+  },
   crmAudit: (me: Me, q: Row) => {
     if (!me.isAdmin) throw new AppErr('سجل التعديلات للأدمن بس');
     let items = db.audit.slice().reverse();
@@ -674,5 +718,25 @@ export async function mockBooking(b: Record<string, unknown>) {
   save();
   return { ok: true, bookingId: s(bk.id), leadId: s(lead.id), meetLink: s(bk.meetLink) };
 }
+/** Stands in for the «Magmafy Files» script: keeps file bytes in memory for this tab. */
+const mockBlobs = new Map<string, { name: string; mime: string; data: string }>();
+export async function mockFiles(body: Record<string, unknown>, onProgress?: (p: number) => void): Promise<Record<string, unknown>> {
+  const t = JSON.parse(s(body.ticket)) as Row;
+  if (body.action === 'upload') {
+    for (let i = 1; i <= 6; i++) { await wait(120); onProgress?.(Math.min(0.97, i / 6)); }
+    const fileId = 'mock-' + Math.random().toString(36).slice(2, 10);
+    mockBlobs.set(fileId, { name: s(t.name), mime: s(t.mime), data: s(body.data) });
+    return { ok: true, receipt: JSON.stringify({ op: 'receipt', leadId: t.leadId, email: t.email, fileId, name: t.name, mime: t.mime, size: t.size }) };
+  }
+  if (body.action === 'get') {
+    await wait(200);
+    const b = mockBlobs.get(s(t.fileId));
+    // Demo files from an earlier visit aren't kept: show a small placeholder instead.
+    return b ? { ok: true, ...b } : { ok: true, name: 'demo.txt', mime: 'text/plain', data: btoa('Demo file: the content is kept only while this tab is open.') };
+  }
+  if (body.action === 'trash') { mockBlobs.delete(s(t.fileId)); return { ok: true }; }
+  return { ok: false, error: 'bad_op' };
+}
+
 /** Developer helper: reset the sample data. */
 export function resetMockDb() { db = buildDb(); save(); }

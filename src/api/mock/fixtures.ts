@@ -220,9 +220,12 @@ export function buildDb() {
     { key: 'TARGET_CLIENTS', value: '4', help: 'هدف العملاء الجداد اللي بيدفعوا في الشهر' },
     { key: 'TARGET_MRR', value: '60000', help: 'هدف الاشتراكات الشهرية بالريال' },
     { key: 'CRM_URL', value: '', help: 'رابط موقع الـ CRM الجديد' },
-    { key: 'CHAT_POLL_SECONDS', value: '10', help: 'كل كام ثانية المحادثة المفتوحة بتتحدث' }
+    { key: 'CHAT_POLL_SECONDS', value: '10', help: 'كل كام ثانية المحادثة المفتوحة بتتحدث' },
+    { key: 'EMAIL_DIGEST_MINUTES', value: '15', help: 'تنبيهات الإيميل: 0 = فوري، 5 / 10 / 15 / 30 / 60 = كل كام دقيقة، off = مقفولة' },
+    { key: 'FILES_URL', value: 'mock:files', help: 'رابط سكريبت «Magmafy Files»' },
+    { key: 'FILES_SECRET', value: 'mock-secret-mock-secret-mock-secret-00', help: 'المفتاح السري المشترك مع سكريبت الملفات' }
   ];
-  return { team: TEAM.map((x) => ({ ...x })), templates: TEMPLATES.map((x) => ({ ...x })), leads, bookings, tasks, activity, readiness, announcements, threads, messages, reads, notifications, access, audit, settings, seq: { L: leads.length, A: a, T: tk, M: m, ANN: 3, TH: 5, MSG: 11, N: 4, AU: 0, AR: 1, TPL: 0 } };
+  return { team: TEAM.map((x) => ({ ...x })), templates: TEMPLATES.map((x) => ({ ...x })), leads, bookings, tasks, activity, readiness, announcements, threads, messages, reads, notifications, access, audit, settings, files: [] as Row[], seq: { L: leads.length, A: a, T: tk, M: m, ANN: 3, TH: 5, MSG: 11, N: 4, AU: 0, AR: 1, TPL: 0, F: 0 } };
 }
 const ACTIVE_FOLLOW = ['تم التواصل', 'اجتماع محجوز', 'تم الاجتماع', 'عرض مرسل', 'تفاوض', 'فترة تجريبية'];
 export type Db = ReturnType<typeof buildDb>;

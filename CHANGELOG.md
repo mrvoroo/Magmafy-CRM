@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 — 2026-10-30
+
+- Files on Google Drive: upload (drag and drop, progress, 20 MB, PDF, images, Office, ZIP), in-app preview of images and PDFs, delete to the Drive bin. Files live on the Drive account with the space through a separate «Magmafy Files» script (`backend/files/Files.gs`), reached with signed 10-minute tickets; new sheet tab «الملفات».
+- Email notifications: unread bell notifications grouped into one email per person, on an interval an admin picks in Settings (right away, 5, 10, 15, 30, 60 minutes, off; default 15). Urgent announcements always go right away; each person can mute kinds in Preferences.
+- Tests cover both scripts together (tickets, replay, tampering, permissions, digest timing, mutes).
+
 ## 1.1.0 — 2026-10-30
 
 - Backend (`backend/`): gateway for the site (`doPost action=crm`) and the 23 new functions: announcements, team chat, notifications and pulse, access requests, audit log, settings, team, templates, bulk lead edits, activity feed.

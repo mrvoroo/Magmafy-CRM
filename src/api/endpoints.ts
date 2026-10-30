@@ -51,5 +51,12 @@ export const api = {
   saveThread: (t: Record<string, unknown>) => call('crmSaveThread', [t], z.object({ ok: z.boolean(), thread: S.ThreadSchema })),
   accessRequests: () => call('crmAccessRequests', [], z.object({ items: z.array(S.AccessSchema) })),
   handleAccess: (id: string, d: { decision: 'accept' | 'reject'; member?: Partial<S.TeamMember>; reason?: string }) => call('crmHandleAccess', [id, d], ok),
-  audit: (q: Record<string, unknown>) => call('crmAudit', [q], S.page(S.AuditSchema))
+  audit: (q: Record<string, unknown>) => call('crmAudit', [q], S.page(S.AuditSchema)),
+
+  /* ---------- files on Drive + email preferences ---------- */
+  fileTicket: (q: { op: 'upload'; leadId: string; name: string; mime: string; size: number } | { op: 'view' | 'trash'; id: string }) =>
+    call('crmFileTicket', [q], z.object({ url: z.string(), ticket: z.string(), maxBytes: z.number().optional() })),
+  attachFile: (receipt: string) => call('crmAttachFile', [receipt], z.object({ ok: z.boolean(), file: S.FileSchema })),
+  deleteFile: (id: string) => call('crmDeleteFile', [id], z.object({ ok: z.boolean(), trash: z.object({ url: z.string(), ticket: z.string() }).nullable().optional() })),
+  saveMyPrefs: (p: { emailOff: string[] }) => call('crmSaveMyPrefs', [p], z.object({ ok: z.boolean(), emailOff: z.array(z.string()) }))
 };

@@ -16,7 +16,7 @@ export const STAGES = ['جديد', 'تم التواصل', 'اجتماع محجو
 export const PATH = STAGES.slice(0, 8) as readonly string[];
 export const ACTIVE = ['تم التواصل', 'اجتماع محجوز', 'تم الاجتماع', 'عرض مرسل', 'تفاوض', 'فترة تجريبية'];
 
-export const MeSchema = z.object({ email: str, name: str, role: str, isAdmin: z.boolean() });
+export const MeSchema = z.object({ email: str, name: str, role: str, isAdmin: z.boolean(), emailOff: list.optional().default([]) });
 export type Me = z.infer<typeof MeSchema>;
 
 export const LeadSchema = z.object({
@@ -62,7 +62,7 @@ export const BootstrapSchema = z.object({
   me: MeSchema,
   lists: z.record(z.array(z.string())),
   team: z.array(TeamMemberSchema),
-  settings: z.object({ brand: str, teamWhatsapp: str, siteUrl: str, staleDays: num, sheetUrl: str, chatPollSeconds: num.optional() }).passthrough(),
+  settings: z.object({ brand: str, teamWhatsapp: str, siteUrl: str, staleDays: num, sheetUrl: str, chatPollSeconds: num.optional(), emailDigest: str.optional(), filesReady: z.boolean().optional() }).passthrough(),
   templates: z.array(TemplateSchema),
   leads: z.array(LeadSchema),
   tasks: z.array(TaskSchema),
@@ -73,8 +73,13 @@ export const BootstrapSchema = z.object({
 });
 export type Bootstrap = z.infer<typeof BootstrapSchema>;
 
+/** A file kept on Google Drive by the «Magmafy Files» script (tab «الملفات»). */
+export const FileSchema = z.object({ id: str, date: str, leadId: str, name: str, mime: str, size: num, driveId: str, url: str, by: str, byEmail: str }).passthrough();
+export type LeadFile = z.infer<typeof FileSchema>;
+
 export const LeadDetailSchema = z.object({
-  lead: LeadSchema, activities: z.array(ActivitySchema), tasks: z.array(TaskSchema), bookings: z.array(BookingSchema), readiness: z.array(ReadinessSchema)
+  lead: LeadSchema, activities: z.array(ActivitySchema), tasks: z.array(TaskSchema), bookings: z.array(BookingSchema), readiness: z.array(ReadinessSchema),
+  files: z.array(FileSchema).optional().default([])
 });
 export type LeadDetail = z.infer<typeof LeadDetailSchema>;
 

@@ -38,7 +38,8 @@ const SHEET = {
   MESSAGES: 'الرسائل',
   NOTIFICATIONS: 'الإشعارات',
   ACCESS: 'طلبات الانضمام',
-  AUDIT: 'سجل التعديلات'
+  AUDIT: 'سجل التعديلات',
+  FILES: 'الملفات'
 };
 
 // [key, header, width, format]  — code reads columns by header, so the team can reorder them.
@@ -86,7 +87,8 @@ const COLS = {
     ['subject', 'عنوان الإيميل', 240], ['body', 'النص', 520], ['active', 'نشط', 70]
   ],
   TEAM: [
-    ['name', 'الاسم', 150], ['email', 'البريد', 220], ['role', 'الدور', 110], ['whatsapp', 'واتساب', 140, '@'], ['active', 'نشط', 70]
+    ['name', 'الاسم', 150], ['email', 'البريد', 220], ['role', 'الدور', 110], ['whatsapp', 'واتساب', 140, '@'], ['active', 'نشط', 70],
+    ['emailOff', 'إيقاف إيميلات', 220]
   ],
   SETTINGS: [['key', 'الإعداد', 200], ['value', 'القيمة', 320], ['help', 'شرح', 460]],
   ERRORS: [['date', 'التاريخ', 140, 'yyyy-mm-dd hh:mm'], ['where', 'المكان', 140], ['message', 'الخطأ', 420], ['payload', 'البيانات', 420]],
@@ -114,7 +116,8 @@ const COLS = {
   ],
   NOTIFICATIONS: [
     ['id', 'ID', 90], ['date', 'التاريخ', 130, 'yyyy-mm-dd hh:mm'], ['toEmail', 'إلى', 200], ['kind', 'النوع', 100],
-    ['title', 'العنوان', 320], ['refType', 'مرتبط بـ', 90], ['refId', 'ID المرتبط', 90], ['by', 'بواسطة', 120], ['readAt', 'اتقرا', 130, 'yyyy-mm-dd hh:mm']
+    ['title', 'العنوان', 320], ['refType', 'مرتبط بـ', 90], ['refId', 'ID المرتبط', 90], ['by', 'بواسطة', 120], ['readAt', 'اتقرا', 130, 'yyyy-mm-dd hh:mm'],
+    ['emailedAt', 'اتبعت إيميل', 130, 'yyyy-mm-dd hh:mm']
   ],
   ACCESS: [
     ['id', 'ID', 80], ['date', 'التاريخ', 130, 'yyyy-mm-dd hh:mm'], ['email', 'البريد', 220], ['name', 'الاسم', 150],
@@ -124,6 +127,12 @@ const COLS = {
     ['id', 'ID', 100], ['date', 'التاريخ', 140, 'yyyy-mm-dd hh:mm:ss'], ['byEmail', 'بريد العضو', 200], ['byName', 'العضو', 130],
     ['source', 'المصدر', 80], ['action', 'الإجراء', 80], ['entity', 'الكيان', 90], ['entityId', 'ID الكيان', 100], ['field', 'الحقل', 120],
     ['oldValue', 'القيمة القديمة', 260], ['newValue', 'القيمة الجديدة', 260], ['note', 'ملاحظة', 200]
+  ],
+  // Files kept on Google Drive by the «Magmafy Files» script (Api.gs §10).
+  FILES: [
+    ['id', 'ID', 80], ['date', 'التاريخ', 130, 'yyyy-mm-dd hh:mm'], ['leadId', 'ID العميل', 80], ['name', 'اسم الملف', 240],
+    ['mime', 'النوع', 150], ['size', 'الحجم (بايت)', 110, '#,##0'], ['driveId', 'ID في Drive', 200, '@'], ['url', 'رابط Drive', 260],
+    ['by', 'رفعه', 120], ['byEmail', 'بريد اللي رفعه', 200], ['deletedAt', 'اتمسح', 130, 'yyyy-mm-dd hh:mm'], ['deletedBy', 'مسحه', 120]
   ]
 };
 
@@ -184,7 +193,10 @@ const SETTINGS_DEFAULTS = [
   ['TARGET_CLIENTS', '', 'هدف العملاء الجداد اللي بيدفعوا في الشهر (اختياري)'],
   ['TARGET_MRR', '', 'هدف الاشتراكات الشهرية بالريال (اختياري)'],
   ['CRM_URL', 'https://mrvoroo.github.io/Magmafy-CRM/', 'رابط موقع الـ CRM (بيتحط في إيميلات الإعلانات وقبول طلبات الانضمام)'],
-  ['CHAT_POLL_SECONDS', '10', 'كل كام ثانية المحادثة المفتوحة بتتحدث (أقل حاجة 5)']
+  ['CHAT_POLL_SECONDS', '10', 'كل كام ثانية المحادثة المفتوحة بتتحدث (أقل حاجة 5)'],
+  ['EMAIL_DIGEST_MINUTES', '15', 'تنبيهات الإيميل: 0 = فوري، 5 / 10 / 15 / 30 / 60 = كل كام دقيقة، off = مقفولة (الإعلان العاجل بيتبعت فورًا دايمًا)'],
+  ['FILES_URL', '', 'رابط سكريبت «Magmafy Files» (Web app على حساب الـ Drive اللي فيه المساحة، آخره /exec)'],
+  ['FILES_SECRET', '', 'المفتاح السري المشترك مع سكريبت الملفات: بيتولّد لوحده، انسخه في Files.gs ومتشاركهوش']
 ];
 
 const TEMPLATES = [
@@ -920,7 +932,7 @@ function setupMagmafy() {
   lists.setColumnWidths(1, names.length, 150);
 
   const keys = ['LEADS', 'BOOKINGS', 'ACTIVITY', 'TASKS', 'READINESS', 'TEMPLATES', 'TEAM', 'SETTINGS', 'ERRORS',
-    'ANNOUNCEMENTS', 'READS', 'THREADS', 'MESSAGES', 'NOTIFICATIONS', 'ACCESS', 'AUDIT'];
+    'ANNOUNCEMENTS', 'READS', 'THREADS', 'MESSAGES', 'NOTIFICATIONS', 'ACCESS', 'AUDIT', 'FILES'];
   const big = ['LEADS', 'BOOKINGS', 'ACTIVITY', 'TASKS', 'READINESS', 'READS', 'MESSAGES', 'NOTIFICATIONS', 'AUDIT'];
   keys.forEach((key) => {
     const sh = ensureSheet_(ss, SHEET[key]);
@@ -951,6 +963,11 @@ function setupMagmafy() {
   const settings = table_('SETTINGS');
   const haveKeys = settings.rows.map((r) => r.key);
   SETTINGS_DEFAULTS.forEach((s) => { if (haveKeys.indexOf(s[0]) < 0) settings.append({ key: s[0], value: s[1], help: s[2] }); });
+  // A random secret shared with the «Magmafy Files» script, made once.
+  const sec = table_('SETTINGS').rows.filter((r) => r.key === 'FILES_SECRET')[0];
+  if (sec && String(sec.value || '').length < 32) table_('SETTINGS').update(sec._row, { value: (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '') });
+  SETTINGS_CACHE = null;
+  try { ensureDigestTrigger_(); } catch (err) { logError_('trigger:digest', err, {}); }
   const tpl = table_('TEMPLATES');
   const haveTpl = tpl.rows.map((r) => r.id);
   TEMPLATES.forEach((t) => { if (haveTpl.indexOf(t[0]) < 0) tpl.append({ id: t[0], channel: t[1], name: t[2], stage: t[3], subject: t[4], body: t[5], active: 'نعم' }); });
@@ -967,7 +984,7 @@ function setupMagmafy() {
 
   // Order the tabs and drop the default empty sheet.
   const order = [SHEET.SUMMARY, SHEET.LEADS, SHEET.BOOKINGS, SHEET.TASKS, SHEET.ACTIVITY, SHEET.READINESS, SHEET.TEMPLATES, SHEET.TEAM,
-    SHEET.ANNOUNCEMENTS, SHEET.THREADS, SHEET.MESSAGES, SHEET.NOTIFICATIONS, SHEET.READS, SHEET.ACCESS, SHEET.AUDIT,
+    SHEET.ANNOUNCEMENTS, SHEET.THREADS, SHEET.MESSAGES, SHEET.NOTIFICATIONS, SHEET.READS, SHEET.ACCESS, SHEET.AUDIT, SHEET.FILES,
     SHEET.SETTINGS, SHEET.LISTS, SHEET.ERRORS];
   order.forEach((n, i) => { const sh = ss.getSheetByName(n); ss.setActiveSheet(sh); ss.moveActiveSheet(i + 1); });
   ['Sheet1', 'ورقة1', 'الورقة1'].forEach((n) => { const sh = ss.getSheetByName(n); if (sh && sh.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sh); });
@@ -980,12 +997,13 @@ function installTriggers() {
   requireOperator_();
   const ss = SpreadsheetApp.getActive();
   ScriptApp.getProjectTriggers().forEach((t) => {
-    if (['hourlyJobs', 'dailyDigest', 'handleEdit'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+    if (['hourlyJobs', 'dailyDigest', 'handleEdit', 'emailDigest'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('hourlyJobs').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('dailyDigest').timeBased().atHour(8).everyDays(1).inTimezone('Asia/Riyadh').create();
   ScriptApp.newTrigger('handleEdit').forSpreadsheet(ss).onEdit().create();
-  toast_('الأتمتة اشتغلت ✓ (تذكير كل ساعة، ملخص بين 8 و 9 الصبح، تتبع التعديلات)');
+  ScriptApp.newTrigger('emailDigest').timeBased().everyMinutes(5).create();
+  toast_('الأتمتة اشتغلت ✓ (تذكير كل ساعة، ملخص بين 8 و 9 الصبح، تنبيهات الإيميل، تتبع التعديلات)');
 }
 
 /** Sends a fake booking 2 days ahead to the first admin, end to end. */

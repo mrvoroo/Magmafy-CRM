@@ -677,3 +677,31 @@ kbd { font: 500 11px var(--f-num); border: 1px solid var(--line-2); border-radiu
 
 /* Buttons sitting in the notch are on the page background, not on the highlight fill. */
 .ncard--hl .ncard__notch .ibtn { border-color: var(--line-2); color: var(--ink); }
+
+/* ================= files (lead → Documents) ================= */
+.dropzone { display: flex; align-items: center; gap: 14px; padding: 18px; border: 1.5px dashed var(--line-2); border-radius: 22px; cursor: pointer; transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dropzone:hover, .dropzone:focus-visible, .dropzone.is-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); outline: none; }
+.dropzone > span:not(.dropzone__icon) { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dropzone small { color: var(--ink-3); font-size: 12.5px; }
+.dropzone__icon { width: 44px; height: 44px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: var(--grad, linear-gradient(135deg, #fa7e1e, #d62976, #962fbf)); color: #fff; }
+.dropzone__icon svg { width: 20px; height: 20px; }
+.upload-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 14px; background: var(--card-2); font-size: 13.5px; }
+.progress { width: 140px; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; flex-shrink: 0; }
+.progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #fa7e1e, #d62976, #962fbf); transition: width .2s linear; }
+.file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 14px; }
+.file-card { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 18px; background: var(--card-2); cursor: pointer; min-width: 0; transition: transform var(--t-fast) var(--ease); }
+.file-card:hover, .file-card:focus-visible { transform: translateY(-2px); outline: none; box-shadow: 0 0 0 1.5px var(--accent); }
+.file-card b { font-weight: 600; font-size: 13.5px; }
+.file-card small { font-size: 11.5px; }
+.file-card__type { align-self: flex-start; padding: 3px 8px; border-radius: 8px; font: 700 10.5px var(--f-num); letter-spacing: .04em; color: #fff; background: #6b5a80; }
+.file-card--pdf .file-card__type { background: #d62976; }
+.file-card--image .file-card__type { background: #fa7e1e; }
+.file-card--doc .file-card__type { background: #4f5bd5; }
+.file-card--sheet .file-card__type { background: #1f9d6b; }
+.file-card--slides .file-card__type { background: #e2603b; }
+.file-card__del { position: absolute; top: 8px; inset-inline-end: 8px; opacity: 0; transition: opacity var(--t-fast); }
+.file-card:hover .file-card__del, .file-card:focus-within .file-card__del { opacity: 1; }
+@media (hover: none) { .file-card__del { opacity: 1; } }
+.file-view { margin-top: 14px; }
+.file-view__img { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; border-radius: 14px; }
+.file-view__pdf { width: 100%; height: 70vh; border: 0; border-radius: 14px; background: #fff; }
