@@ -2,7 +2,7 @@
 
 The Magmafy team's CRM portal: login, leads and pipeline, schedule, tasks, team chat and admin announcements. It is built on the HubSpot CRM Kit layout, with the 3D volcano and colour scheme from magmafy-pro. Dark is the default theme, with light and auto as options. Arabic (RTL) is the default language, with English available.
 
-The backend is the existing Google Apps Script + Google Sheet. This repo is the frontend only.
+The backend is Google Apps Script + a Google Sheet; its source is in `backend/` (setup steps in `backend/README.md`, in Arabic).
 
 ## Quick start
 
@@ -58,6 +58,9 @@ npm run dev
 Responses are `{ "ok": true, "data": … }` or `{ "ok": false, "code": "SESSION_EXPIRED|FORBIDDEN|UNKNOWN_FUNCTION|SERVER|APP_ERROR", "error": "…" }`.
 
 ## Backend functions the frontend calls
+
+All of them are implemented in `backend/` (`Crm.gs` and `Api.gs`), and `backend/test/` runs them against an in-memory sheet with the site's own schemas on every `npm test`.
+
 
 `crmRequestCode` `crmVerifyCode` `crmLogout` `crmRequestAccess` `crmBootstrap` `crmPulse` `crmDashboard` `crmLead` `crmSaveLead` `crmDeleteLead` `crmBulkUpdateLeads` `crmAddActivity` `crmAddTask` `crmSetTask` `crmUpdateBooking` `crmLogWhatsApp` `crmSendEmail` `crmSaveTemplate` `crmActivityFeed` `crmNotifications` `crmMarkNotifications` `crmThreads` `crmThread` `crmSaveThread` `crmSendMessage` `crmEditMessage` `crmAnnouncements` `crmSaveAnnouncement` `crmAckAnnouncement` `crmAnnouncementStats` `crmRemindAnnouncement` `crmSettings` `crmSaveSettings` `crmSaveTeamMember` `crmAccessRequests` `crmHandleAccess` `crmAudit`. Also the public `GET ?action=slots` and `POST action=booking`.
 

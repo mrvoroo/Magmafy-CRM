@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-10-30
+
+- Backend (`backend/`): gateway for the site (`doPost action=crm`) and the 23 new functions: announcements, team chat, notifications and pulse, access requests, audit log, settings, team, templates, bulk lead edits, activity feed.
+- 7 new sheet tabs created by «① تجهيز الشيت», plus `CRM_URL` and `CHAT_POLL_SECONDS` settings and an «نشط» column for templates.
+- Every change (site, sheet edits, public bookings) goes to «سجل التعديلات»; assignments, bookings, announcements, messages and mentions ring the bell.
+- Fix: ids no longer wrap to 0000 after 9999 records.
+- Tests run the real `.gs` files against an in-memory sheet with the site's schemas.
+
 ## 1.0.0 — 2026-10-30
 
 First complete build.
