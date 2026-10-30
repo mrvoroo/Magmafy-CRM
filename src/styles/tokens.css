@@ -1,0 +1,74 @@
+/* Magmafy CRM tokens. Dark is the default; light is opt-in via [data-theme=light]. Colours from magmafy-pro/main.css + crm.html. */
+:root, [data-theme='dark'] {
+  --bg: #0e0716;
+  --card: #1a0f27;
+  --card-2: #2a1a3a;
+  --card-hover: #241634;
+  --sunken: #140b1f;
+  --line: rgba(255, 210, 236, .12);
+  --line-2: rgba(255, 196, 226, .30);
+  --ink: #fff4fa;
+  --ink-2: #c7b6d6;
+  --ink-3: #8f7ea3;
+  --highlight: #feda75;
+  --highlight-ink: #1a0f27;
+  --highlight-ink-2: rgba(26, 15, 39, .66);
+  --accent: #f0559a;
+  --accent-soft: rgba(240, 85, 154, .16);
+  --active: #fff4fa;
+  --active-ink: #0e0716;
+  --good: #47c792; --good-soft: rgba(71, 199, 146, .15);
+  --warn: #f0b44c; --warn-soft: rgba(240, 180, 76, .15);
+  --bad: #f2706b;  --bad-soft: rgba(242, 112, 107, .15);
+  --info: #7d87ff; --info-soft: rgba(125, 135, 255, .15);
+  --glass: rgba(14, 7, 22, .72);
+  --scrim: rgba(6, 2, 10, .62);
+  --shadow-pop: 0 18px 50px rgba(0, 0, 0, .55), 0 0 0 1px var(--line);
+  --heat-0: #2e1b2a; --heat-1: #46203b; --heat-2: #62264d; --heat-3: #822d62; --heat-4: #a73878; --heat-5: #cb4a8f; --heat-6: #eb6aa9; --heat-7: #2e9e6f;
+  --hatch: rgba(255, 244, 250, .06);
+  color-scheme: dark;
+}
+[data-theme='light'] {
+  --bg: #f5f2f8;
+  --card: #ffffff;
+  --card-2: #f0ecf4;
+  --card-hover: #faf8fc;
+  --sunken: #ebe5f1;
+  --line: #e8e1ef;
+  --line-2: #d9cee3;
+  --ink: #1f1529;
+  --ink-2: #5e5070;
+  --ink-3: #7a6c8c;
+  --highlight: #feda75;
+  --highlight-ink: #1a0f27;
+  --highlight-ink-2: rgba(26, 15, 39, .7);
+  --accent: #c0206a;
+  --accent-soft: rgba(214, 41, 118, .1);
+  --active: #1f1529;
+  --active-ink: #ffffff;
+  --good: #127a55; --good-soft: #dff3ea;
+  --warn: #9a5b00; --warn-soft: #fff0d6;
+  --bad: #be2f2f;  --bad-soft: #fce4e2;
+  --info: #4f5bd5; --info-soft: #e7e9fb;
+  --glass: rgba(245, 242, 248, .8);
+  --scrim: rgba(31, 21, 41, .34);
+  --shadow-pop: 0 14px 40px rgba(31, 21, 41, .16), 0 0 0 1px var(--line);
+  --heat-0: #f1e3ec; --heat-1: #e7c4d8; --heat-2: #db9dbf; --heat-3: #cd74a4; --heat-4: #bd4a89; --heat-5: #a82d72; --heat-6: #8c1e5d; --heat-7: #127a55;
+  --hatch: rgba(31, 21, 41, .06);
+  color-scheme: light;
+}
+:root {
+  --m-y: #feda75; --m-o: #fa7e1e; --m-p: #d62976; --m-v: #962fbf; --m-b: #4f5bd5;
+  --grad: linear-gradient(100deg, #feda75 0%, #fa7e1e 26%, #d62976 58%, #962fbf 84%, #4f5bd5 108%);
+  --grad-btn: linear-gradient(100deg, #fa7e1e 0%, #d62976 52%, #962fbf 100%);
+  --grad-soft: linear-gradient(135deg, rgba(254, 218, 117, .28), rgba(214, 41, 118, .26) 55%, rgba(79, 91, 213, .26));
+  --dot-1: #f2706b; --dot-2: #fa7e1e; --dot-3: #feda75; --dot-4: #9ed36a; --dot-5: #47c792;
+  --f-display: 'Space Grotesk', 'El Messiri', 'Tajawal', system-ui, sans-serif;
+  --f-display-ar: 'El Messiri', 'Tajawal', system-ui, sans-serif;
+  --f-body: 'Inter', 'Tajawal', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
+  --f-num: 'Space Grotesk', 'Inter', sans-serif;
+  --r-card: 28px; --r-m: 18px; --r-s: 12px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --t-fast: 160ms; --t-med: 240ms; --t-slow: 400ms;
+  --header-h: 72px; --rail-w: 76px;
+}
