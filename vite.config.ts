@@ -36,7 +36,10 @@ function prodHtml(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  // «mock» mode needs no .env file: its defaults live here (an .env.mock can still override them).
+  const mockDefaults: Record<string, string> = mode === 'mock' ? { VITE_MOCK: '1', VITE_ROUTER: 'hash', VITE_BASE_PATH: './' } : {};
+  const env = { ...mockDefaults, ...loadEnv(mode, process.cwd(), '') };
+  for (const [k, v] of Object.entries(mockDefaults)) if (!(k in process.env)) process.env[k] = env[k] ?? v;
   return {
     base: env.VITE_BASE_PATH || '/',
     plugins: [react(), prodHtml()],

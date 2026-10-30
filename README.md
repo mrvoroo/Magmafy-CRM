@@ -26,7 +26,7 @@ npm run dev
 |---|---|
 | `npm run dev` / `dev:mock` | Dev server (real API / in-browser mock) |
 | `npm run build` | Typecheck + production build to `dist/` |
-| `npm run build:mock` | Demo build on mock data (hash router, relative paths: opens from any folder) |
+| `npm run build:mock` | Demo build (mock settings are built into `vite.config.ts`, no .env file needed) on mock data (hash router, relative paths: opens from any folder) |
 | `npm run typecheck` · `lint` · `test` | TypeScript strict, ESLint, Vitest |
 
 ## Environment
