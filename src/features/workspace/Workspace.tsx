@@ -47,7 +47,7 @@ export function Workspace() {
     io.observe(el);
     return () => io.disconnect();
   }, []);
-  useWorldScene(titleVisible && slot ? { shape: 'volcano', anchor: slot, anchorFit: 2.3, opacity: 1 } : { shape: 'core', corner: 'end-bottom', scale: 0.45, opacity: 0.12 }, [titleVisible, slot]);
+  useWorldScene(titleVisible && slot ? { shape: 'volcano', anchor: slot, anchorFit: lang === 'en' ? 3.6 : 4.2, opacity: 1 } : { shape: 'core', corner: 'end-bottom', scale: 0.45, opacity: 0.12 }, [titleVisible, slot, lang]);
 
   /* ---------- numbers (FR-11) ---------- */
   const monthStart = t0.slice(0, 8) + '01';
@@ -112,7 +112,7 @@ export function Workspace() {
     <div>
       <div className="page-head">
         <h1 ref={titleRef} className="page-title display" aria-label={t('مساحة العمل', 'Workspace')}>
-          {lang === 'en' ? <>W<span ref={setSlot} className="vslot" aria-hidden="true" />RKSPACE</> : <>مساحة العمل<span ref={setSlot} className="vslot" aria-hidden="true" style={{ marginInlineStart: '.25em' }} /></>}
+          {lang === 'en' ? <>W<span ref={setSlot} className="vslot" aria-hidden="true" />RKSPACE</> : <>مساحة العمل<span ref={setSlot} className="vslot vslot--wide" aria-hidden="true" /></>}
         </h1>
         <button className="btn btn--primary" onClick={() => actions.newTask()}><span className="btn__plus"><Icon name="plus" /></span>{t('مهمة جديدة', 'New task')}</button>
         <div className="stats-row">

@@ -8,6 +8,6 @@ Short records of choices made while building, and why.
 4. **In-app mock API instead of MSW.** `VITE_MOCK=1` swaps the transport for an in-browser implementation of every function, persisted to localStorage. It needs no service worker and makes demo builds that open from a plain folder.
 5. **Incremental rendering instead of full virtualization.** Lists render in pages ("show more") and the heavy pages are lazy-loaded. Team-scale data (hundreds to low thousands of leads) does not need a virtual scroller.
 6. **Gold highlight `#feda75` instead of the kit's lime.** It comes from the magmafy-pro palette, so the highlighted card stays on-brand.
-7. **3D is progressive.** three.js is a lazy chunk loaded at idle. A frame-time guard falls back to an SVG volcano on slow devices (`mg-crm-3d-slow`), and `prefers-reduced-motion` is respected.
+7. **3D is progressive but always the real volcano.** three.js loads lazily at idle. On slow devices the particle count is cut (down to a quarter) and the animation keeps running. Reduced motion freezes one frame. Only «off» or no WebGL draw the same particles once on a 2D canvas. There is no SVG substitute.
 8. **All times are Riyadh (UTC+3)** regardless of device timezone, matching the sheet.
 9. **Session token in localStorage, short-lived, server-validated.** The OTP flow (`crmRequestCode` → `crmVerifyCode`) is used, with no passwords. The token is revoked by `crmLogout` and expires server-side.

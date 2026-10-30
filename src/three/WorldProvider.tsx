@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { Scene, World } from './world';
 import { useTheme } from '../app/theme';
 import { store } from '../lib/storage';
+import { buildShape, rand } from './shapes';
 
 type Ctx = { setScene: (s: Scene) => void; burst: () => void; setDimmed: (d: boolean) => void };
 const WorldCtx = createContext<Ctx>({ setScene: () => {}, burst: () => {}, setDimmed: () => {} });
@@ -12,15 +13,17 @@ const hasWebGL = () => { try { const c = document.createElement('canvas'); retur
 /**
  * One canvas and one renderer for the whole app, behind everything (NFR-61).
  * three.js loads lazily after the first paint (NFR-60). Reduced motion, «off», no WebGL
- * or a device that keeps dropping frames get the static SVG volcano instead (NFR-63/64).
+ * Slow devices get fewer particles; reduced motion freezes the frame; «off» / no WebGL get a static 2D-canvas render of the same particles.
  */
 export function WorldProvider({ children }: { children: ReactNode }) {
   const { theme, motion } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const world = useRef<World | null>(null);
   const pending = useRef<Scene | null>(null);
-  const [slow, setSlow] = useState(() => store.get('mg-crm-3d-slow') === '1');
-  const fallback = motion === 'off' || slow || reducedMotion() || !hasWebGL();
+  // The real particle volcano runs everywhere. Only «off» or no WebGL get the static (2D canvas) particles.
+  const [noGL, setNoGL] = useState(() => !hasWebGL());
+  const fallback = motion === 'off' || noGL;
+  useEffect(() => { store.del('mg-crm-3d-slow'); }, []); // old sticky flag from v1 builds
   const [scene, setSceneState] = useState<Scene | null>(null);
 
   useEffect(() => {
@@ -29,10 +32,9 @@ export function WorldProvider({ children }: { children: ReactNode }) {
     const boot = () => import('./world').then(({ createWorld }) => {
       if (!alive || !canvasRef.current) return;
       world.current = createWorld(canvasRef.current, {
-        reduced: motion === 'calm', light: document.documentElement.getAttribute('data-theme') === 'light',
-        onSlow: () => { store.set('mg-crm-3d-slow', '1'); setSlow(true); }
+        reduced: motion === 'calm' || reducedMotion(), light: document.documentElement.getAttribute('data-theme') === 'light'
       });
-      if (!world.current) { setSlow(true); return; }
+      if (!world.current) { setNoGL(true); return; }
       if (pending.current) world.current.morph(pending.current);
     });
     const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
@@ -69,42 +71,51 @@ export function useWorldScene(scene: Scene, deps: unknown[] = []) {
   }, [setScene, scene.shape, scene.opacity, scene.scale, scene.anchor, scene.corner, ...deps]);
 }
 
-/** Static volcano for reduced motion / no WebGL. Sits where the 3D one would. */
+/** Same particle volcano, drawn once on a 2D canvas (no WebGL / motion off). Sits where the 3D one would. */
+let cached: Float32Array | null = null;
 function VolcanoFallback({ scene }: { scene: Scene | null }) {
-  const [box, setBox] = useState<{ left: number; top: number; size: number; opacity: number }>({ left: -999, top: -999, size: 0, opacity: 0 });
+  const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    if (!scene) return;
-    const place = () => {
+    const c = ref.current;
+    if (!c || !scene) return;
+    const draw = () => {
+      const w = window.innerWidth, h = window.innerHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+      c.width = w * dpr; c.height = h * dpr;
+      const g = c.getContext('2d');
+      if (!g) return;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, w, h);
+      let cx: number, cy: number, size: number, opacity = scene.opacity ?? 0.9;
       if (scene.anchor) {
         const r = scene.anchor.getBoundingClientRect();
-        const size = r.height * (scene.anchorFit || 2.2);
-        setBox({ left: r.left + r.width / 2 - size / 2, top: r.top + r.height / 2 - size * 0.55, size, opacity: 1 });
+        size = r.height * (scene.anchorFit || 2.2); cx = r.left + r.width / 2; cy = r.top + r.height / 2 - size * 0.07;
       } else if (scene.corner === 'end-bottom') {
-        const size = 260;
-        const rtl = document.documentElement.dir === 'rtl';
-        setBox({ left: rtl ? 24 : window.innerWidth - size - 24, top: window.innerHeight - size - 24, size, opacity: Math.min(0.5, (scene.opacity ?? 0.2) * 2.5) });
+        size = 300 * (scene.scale ?? 0.5) * 2; const rtl = document.documentElement.dir === 'rtl';
+        cx = rtl ? size * 0.55 : w - size * 0.55; cy = h - size * 0.55; opacity = Math.min(0.6, opacity * 2.5);
       } else {
-        const size = Math.min(window.innerWidth, window.innerHeight) * 0.6 * (scene.scale ?? 1);
-        setBox({ left: window.innerWidth / 2 - size / 2 + (scene.x ?? 0) * 60, top: window.innerHeight / 2 - size / 2, size, opacity: scene.opacity ?? 0.9 });
+        size = h * 0.9 * (scene.scale ?? 1); cx = w / 2 + (scene.x ?? 0) * h * 0.12; cy = h / 2 - (scene.y ?? 0) * h * 0.12;
+      }
+      const n = 7000;
+      const pts = cached || (cached = buildShape('volcano', n, rand(101)));
+      const rr = rand(42);
+      const cols = ['#feda75', '#fa7e1e', '#d62976', '#962fbf'];
+      const k = size / 5.6, ax = 0.18, ay = 0.6;
+      const light = document.documentElement.getAttribute('data-theme') === 'light';
+      g.globalCompositeOperation = light ? 'source-over' : 'lighter';
+      for (let i = 0; i < n; i++) {
+        const x0 = pts[i * 3], y0 = pts[i * 3 + 1], z0 = pts[i * 3 + 2], q = rr();
+        const x1 = x0 * Math.cos(ay) + z0 * Math.sin(ay), z1 = -x0 * Math.sin(ay) + z0 * Math.cos(ay);
+        const y2 = y0 * Math.cos(ax) - z1 * Math.sin(ax), z2 = y0 * Math.sin(ax) + z1 * Math.cos(ax);
+        const persp = 9 / (9 - z2);
+        g.globalAlpha = opacity * (0.35 + q * 0.5);
+        g.fillStyle = cols[Math.min(3, Math.floor(q * 4))];
+        g.fillRect(cx + x1 * k * persp, cy - (y2 + 0.4) * k * persp, 1.6, 1.6);
       }
     };
-    place();
-    window.addEventListener('scroll', place, { passive: true });
-    window.addEventListener('resize', place);
-    return () => { window.removeEventListener('scroll', place); window.removeEventListener('resize', place); };
+    draw();
+    window.addEventListener('scroll', draw, { passive: true });
+    window.addEventListener('resize', draw);
+    return () => { window.removeEventListener('scroll', draw); window.removeEventListener('resize', draw); };
   }, [scene]);
-  return (
-    <svg className="world-fallback" aria-hidden="true" viewBox="0 0 200 200" style={{ left: box.left, top: box.top, width: box.size, height: box.size, opacity: box.opacity }}>
-      <defs>
-        <linearGradient id="vg" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stopColor="#4f5bd5" /><stop offset=".35" stopColor="#962fbf" /><stop offset=".65" stopColor="#d62976" /><stop offset=".85" stopColor="#fa7e1e" /><stop offset="1" stopColor="#feda75" /></linearGradient>
-        <radialGradient id="vp" cx=".5" cy=".5" r=".5"><stop offset="0" stopColor="#feda75" stopOpacity=".9" /><stop offset="1" stopColor="#d62976" stopOpacity="0" /></radialGradient>
-      </defs>
-      <ellipse cx="100" cy="48" rx="46" ry="40" fill="url(#vp)" />
-      <circle cx="92" cy="38" r="10" fill="#fa7e1e" opacity=".55" /><circle cx="110" cy="26" r="7" fill="#feda75" opacity=".6" /><circle cx="100" cy="60" r="8" fill="#d62976" opacity=".5" />
-      <path d="M22 178 L84 88 Q100 78 116 88 L178 178 Z" fill="url(#vg)" />
-      <path d="M84 88 Q100 96 116 88" stroke="#feda75" strokeWidth="4" fill="none" />
-      <path d="M96 92 C94 120 104 140 92 176" stroke="#feda75" strokeWidth="2.5" fill="none" opacity=".8" />
-      <path d="M108 92 C114 118 106 150 122 176" stroke="#fa7e1e" strokeWidth="2" fill="none" opacity=".7" />
-    </svg>
-  );
+  return <canvas ref={ref} className="world" aria-hidden="true" />;
 }

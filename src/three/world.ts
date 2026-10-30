@@ -67,7 +67,7 @@ export type World = {
   dispose: () => void;
 };
 
-export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean; light: boolean; onSlow: () => void }): World | null {
+export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean; light: boolean; onSlow?: () => void }): World | null {
   let renderer: THREE.WebGLRenderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'high-performance' });
@@ -158,7 +158,7 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
     goal.x = ndcX * HALF_H * camera.aspect;
     goal.y = ndcY * HALF_H - SHAPE_CY * scale;
     goal.scale = scale;
-    goal.size = baseSize * Math.max(0.42, Math.min(1, scale * 1.6));
+    goal.size = baseSize * Math.max(0.8, Math.min(1, scale * 1.8));
   }
 
   function retarget(next: Float32Array) {
@@ -182,7 +182,7 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
   const clock = new THREE.Clock();
   let running = !opts.reduced;
   let raf = 0;
-  let slowFor = 0, halved = false, lastFrame = 0;
+  let slowFor = 0, cuts = 0, lastFrame = 0;
   function frame(t: number) {
     if (!running) return;
     // Cap at 30 fps while a dialog or drawer is open.
@@ -192,12 +192,12 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
     const dt = Math.min(raw, 0.05);
     material.uniforms.uTime.value = clock.elapsedTime;
 
-    // Performance guard: halve the particles, then give up and ask the app to fall back.
+    // Performance guard: on a struggling device thin the particles (down to a quarter),
+    // but never stop: the volcano keeps animating everywhere (owner's request).
     if (raw > 0.024 && raw < 1) slowFor += raw; else slowFor = Math.max(0, slowFor - dt);
     if (slowFor > 2) {
       slowFor = 0;
-      if (!halved) { halved = true; N = Math.floor(N / 2); geometry.setDrawRange(0, N); }
-      else { opts.onSlow(); return; }
+      if (cuts < 2) { cuts++; N = Math.floor(N / 2); geometry.setDrawRange(0, N); opts.onSlow?.(); }
     }
 
     const b = material.uniforms.uBurst;
