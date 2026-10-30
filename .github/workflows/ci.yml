@@ -28,10 +28,10 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      # Real backend if the VITE_API_URL repo variable is set; otherwise a demo build on the in-browser mock.
+      # Real backend: the repo variable VITE_API_URL if set, otherwise the URL pinned here (same as .env.production).
       - name: Build
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://script.google.com/macros/s/AKfycbx4FMcwUULL0fWflTWxuKs-wgGWzAn74yXg7FzBtcPbtqQu1tbVIai6Ct-jsjZ19xlF/exec' }}
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || format('/{0}/', github.event.repository.name) }}
           VITE_ROUTER: ${{ vars.VITE_ROUTER || 'hash' }}
         run: |

@@ -33,7 +33,7 @@ npm run dev
 
 | Variable | Default | Notes |
 |---|---|---|
-| `VITE_API_URL` | — | Apps Script web app `/exec` URL |
+| `VITE_API_URL` | pinned in `.env.production` | Apps Script web app `/exec` URL (a repo variable of the same name overrides it in CI) |
 | `VITE_BASE_PATH` | `/` | Sub-path when hosted under a folder, e.g. `/magmafy-crm/` on GitHub Pages |
 | `VITE_ROUTER` | `browser` | `hash` for hosts without SPA rewrites (GitHub Pages works either way: the build ships a `404.html`) |
 | `VITE_MOCK` | `0` | `1` = in-browser mock API (never in production) |
