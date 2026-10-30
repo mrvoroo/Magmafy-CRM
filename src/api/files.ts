@@ -45,22 +45,35 @@ function toBase64(file: Blob): Promise<string> {
   });
 }
 
-/** POST to the files script with upload progress. Apps Script answers through a redirect, which XHR follows. */
-function postFiles(url: string, body: Record<string, unknown>, onProgress?: (p: number) => void): Promise<Record<string, unknown>> {
+/**
+ * POST to the files script. It must stay a «simple» CORS request (text/plain, no upload listeners):
+ * Apps Script doesn't answer the OPTIONS preflight an XHR upload listener would trigger, and the browser
+ * would report it as a network error. So progress is estimated from the size while the request runs.
+ */
+async function postFiles(url: string, body: Record<string, unknown>, onProgress?: (p: number) => void): Promise<Record<string, unknown>> {
   if (url.startsWith('mock:')) return import('./mock/server').then((m) => m.mockFiles(body, onProgress));
-  return new Promise((resolve, reject) => {
-    const x = new XMLHttpRequest();
-    x.open('POST', url);
-    x.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
-    x.timeout = 5 * 60000;
-    if (onProgress) x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.min(0.97, e.loaded / e.total)); };
-    x.onload = () => {
-      try { resolve(JSON.parse(x.responseText)); } catch { reject(new ApiError('SERVER', 'سكريبت الملفات رد برد مش مفهوم')); }
-    };
-    x.onerror = () => reject(new ApiError('NETWORK', 'مفيش اتصال بسكريبت الملفات'));
-    x.ontimeout = () => reject(new ApiError('TIMEOUT', 'الرفع أخد وقت طويل، جرّب تاني'));
-    x.send(JSON.stringify(body));
-  });
+  const text = JSON.stringify(body);
+  let timer: ReturnType<typeof setInterval> | undefined;
+  if (onProgress) {
+    // ~250 KB/s up plus Drive's own time; eases towards 95% and waits there for the answer.
+    const expected = 2500 + (text.length / 250_000) * 1000;
+    const t0 = Date.now();
+    timer = setInterval(() => onProgress(Math.min(0.95, 1 - Math.exp(-(Date.now() - t0) / expected * 2))), 200);
+  }
+  const ctrl = new AbortController();
+  const kill = setTimeout(() => ctrl.abort(), 5 * 60000);
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: text, redirect: 'follow', signal: ctrl.signal });
+    const raw = await res.text();
+    try { return JSON.parse(raw); } catch { throw new ApiError('APP_ERROR', 'سكريبت الملفات رد برد مش مفهوم: اتأكد إن الـ Deploy على «Anyone»'); }
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    if ((e as Error).name === 'AbortError') throw new ApiError('APP_ERROR', 'الرفع أخد وقت طويل، جرّب تاني');
+    throw new ApiError('APP_ERROR', 'مفيش اتصال بسكريبت الملفات: اتأكد من الرابط وإن الـ Deploy على «Anyone»');
+  } finally {
+    if (timer) clearInterval(timer);
+    clearTimeout(kill);
+  }
 }
 
 function failOf(res: Record<string, unknown>) {
