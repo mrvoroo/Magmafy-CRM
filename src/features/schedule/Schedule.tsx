@@ -43,7 +43,25 @@ export function Schedule() {
     if (view === 'month') { const d = new Date(Date.UTC(p.y, p.m + dir, 1)); set('d', d.toISOString().slice(0, 10)); }
     else set('d', addDays(day, dir * step));
   };
-  const dayEvents = byDay.get(day) || [];
+  const dayEvents = useMemo(() => byDay.get(day) || [], [byDay, day]);
+  // Lay out the day like a calendar: items that overlap in time share the row in side-by-side columns.
+  const lanes = useMemo(() => {
+    const box = dayEvents.map((e) => {
+      const top = Math.max(0, ((minutesOfDay(new Date(e.at)) - H0 * 60) / 60) * ROW) + 4;
+      return { top, bottom: top + (e.kind === 'meet' ? ROW / 2 + 22 : 46) + 4 };
+    });
+    const col: number[] = [], cols: number[] = [];
+    let group: number[] = [], groupEnd = -1;
+    const flush = () => { const n = Math.max(...group.map((i) => col[i])) + 1; group.forEach((i) => { cols[i] = n; }); group = []; };
+    box.forEach((b, i) => {
+      if (group.length && b.top >= groupEnd) flush();
+      const used = new Set(group.filter((j) => box[j].bottom > b.top).map((j) => col[j]));
+      let c = 0; while (used.has(c)) c++;
+      col[i] = c; group.push(i); groupEnd = Math.max(groupEnd, b.bottom);
+    });
+    if (group.length) flush();
+    return box.map((b, i) => ({ ...b, col: col[i], cols: cols[i] }));
+  }, [dayEvents]);
   const isToday = day === todayKey();
   const nowTop = ((minutesOfDay(new Date(now)) - H0 * 60) / 60) * ROW;
   const needs = boot.bookings.filter((b) => b.status === 'مؤكد' && Date.parse(b.start) < now - 3600e3).length;
@@ -82,12 +100,12 @@ export function Schedule() {
             ))}
             {isToday && nowTop > 0 && nowTop < (H1 - H0) * ROW ? <div className="dayline__now" style={{ top: nowTop }} aria-label={t('دلوقتي', 'Now')} /> : null}
             {dayEvents.map((e, i) => {
-              const m = minutesOfDay(new Date(e.at));
-              const top = Math.max(0, ((m - H0 * 60) / 60) * ROW) + 4;
+              const { top, col, cols } = lanes[i];
+              const w = 'calc((100% - var(--dl-off)) / ' + cols + ')';
               const hl = e.kind === 'meet' && e.status === 'مؤكد' && Date.parse(e.at) + 45 * 60e3 > now && !dayEvents.slice(0, i).some((x) => x.kind === 'meet' && x.status === 'مؤكد' && Date.parse(x.at) + 45 * 60e3 > now);
               return (
                 <div key={e.id} className={'dayline__ev ' + (hl ? 'ncard--hl' : e.kind === 'meet' ? '' : 'hatch')} role="button" tabIndex={0}
-                  style={{ top, height: e.kind === 'meet' ? ROW / 2 + 22 : 46, background: hl ? 'var(--highlight)' : e.kind === 'meet' ? 'var(--card-2)' : undefined, border: e.kind === 'task' ? '1px dashed var(--line-2)' : undefined, color: hl ? 'var(--highlight-ink)' : undefined }}
+                  style={{ top, insetInlineStart: 'calc(var(--dl-off) + ' + w + ' * ' + col + ')', width: 'calc(' + w + ' - ' + (cols > 1 ? 6 : 0) + 'px)', height: e.kind === 'meet' ? ROW / 2 + 22 : 46, background: hl ? 'var(--highlight)' : e.kind === 'meet' ? 'var(--card-2)' : undefined, border: e.kind === 'task' ? '1px dashed var(--line-2)' : undefined, color: hl ? 'var(--highlight-ink)' : undefined }}
                   onClick={() => e.leadId && openLead(e.leadId, e.kind === 'meet' ? 'log' : 'tasks')} onKeyDown={(k) => k.key === 'Enter' && e.leadId && openLead(e.leadId)}>
                   {e.kind === 'meet' ? <Brand name={e.platform === 'Zoom' ? 'zoom' : 'meet'} /> : <Icon name="tasks" size={18} />}
                   <div style={{ minWidth: 0, flex: 1 }}><b className="ellipsis" style={{ display: 'block', fontWeight: 500 }}>{e.title}</b><small className="ellipsis" style={{ display: 'block', opacity: 0.75 }}>{e.sub}</small></div>

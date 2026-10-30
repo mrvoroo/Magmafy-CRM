@@ -256,7 +256,7 @@ html[lang='ar'] .sec-head h2 { font-family: var(--f-display-ar); font-weight: 60
 .hatch { background-image: repeating-linear-gradient(45deg, var(--hatch) 0 2px, transparent 2px 10px); }
 
 /* ================= header: schedule bar ================= */
-.sched { flex: 1; min-width: 0; display: flex; align-items: center; height: 56px; border-radius: 999px; background: var(--active); color: var(--active-ink); padding: 6px; padding-inline-start: 20px; gap: 12px; }
+.sched { --active: var(--card); --active-ink: var(--ink); flex: 1; min-width: 0; display: flex; align-items: center; height: 56px; border-radius: 999px; background: var(--active); color: var(--active-ink); border: 1px solid var(--line); padding: 6px; padding-inline-start: 20px; gap: 12px; }
 .sched__title { font-size: 15px; font-weight: 500; white-space: nowrap; }
 .sched__date { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px 0 6px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--active-ink) 14%, transparent); font-size: 13px; white-space: nowrap; }
 [dir='rtl'] .sched__date { padding: 0 6px 0 14px; }
@@ -268,8 +268,11 @@ html[lang='ar'] .sec-head h2 { font-family: var(--f-display-ar); font-weight: 60
 .sched__ev { position: absolute; top: 50%; translate: -50% -50%; display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px 3px 3px; border-radius: 999px; background: var(--active); color: var(--active-ink); border: 1px solid color-mix(in srgb, var(--active-ink) 14%, transparent); font: 500 11px var(--f-num); white-space: nowrap; cursor: pointer; z-index: 2; }
 [dir='rtl'] .sched__ev { translate: 50% -50%; padding: 3px 3px 3px 9px; }
 .sched__ev:hover { border-color: var(--accent); }
-.sched__ev.is-past { background: color-mix(in srgb, var(--highlight) 70%, var(--active)); }
+.sched__ev.is-past { background: color-mix(in srgb, var(--highlight) 70%, var(--active)); color: var(--highlight-ink); }
 .sched__ev .av { border-color: var(--active); }
+.sched__ev .avs { display: inline-flex; }
+.sched__ev .avs > * + * { margin-inline-start: -8px; }
+.sched__ev .more { font-weight: 600; opacity: .75; }
 .sched__now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--active-ink); z-index: 3; transition: inset-inline-start 1s linear; }
 .sched__now::before { content: ''; position: absolute; bottom: 2px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--active-ink); }
 .sched__nowlbl { position: absolute; top: -1px; translate: -50% 0; z-index: 4; padding: 0 6px; border-radius: 6px; background: var(--active-ink); color: var(--active); font: 600 9.5px/15px var(--f-num); white-space: nowrap; }
@@ -395,12 +398,12 @@ html[lang='ar'] .lead-hero h1 { font-family: var(--f-display-ar); font-weight: 6
 .day-head { display: flex; align-items: baseline; gap: 10px; }
 .day-head b { font: 300 64px/1 var(--f-num); letter-spacing: -.03em; }
 .day-head span { color: var(--ink-2); font-size: 15px; }
-.dayline { position: relative; display: grid; grid-template-columns: 76px minmax(0, 1fr); }
+.dayline { --dl-off: 84px; position: relative; display: grid; grid-template-columns: 76px minmax(0, 1fr); }
 .dayline__hour { height: 92px; border-top: 1px solid var(--line); display: flex; align-items: flex-start; padding-top: 6px; }
 .dayline__hour b { font: 300 30px/1 var(--f-num); letter-spacing: -.02em; }
 .dayline__hour small { font-size: 11px; color: var(--ink-3); margin-inline-start: 4px; }
 .dayline__slot { height: 92px; border-top: 1px solid var(--line); }
-.dayline__ev { position: absolute; inset-inline-start: 84px; inset-inline-end: 0; border-radius: 22px; padding: 10px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; overflow: hidden; min-height: 44px; }
+.dayline__ev { position: absolute; border-radius: 22px; padding: 10px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; overflow: hidden; min-height: 44px; }
 .dayline__now { position: absolute; inset-inline-start: 76px; inset-inline-end: 0; height: 2px; background: var(--accent); z-index: 3; }
 .dayline__now::before { content: ''; position: absolute; inset-inline-start: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
 .week { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); gap: 10px; overflow-x: auto; }
@@ -535,8 +538,8 @@ kbd { font: 500 11px var(--f-num); border: 1px solid var(--line-2); border-radiu
 .wordmark__text { font-family: 'Inter', system-ui, sans-serif; font-weight: 800; letter-spacing: -.02em; color: var(--ink); line-height: 1; }
 .wordmark__fy { background: linear-gradient(90deg, #fa7e1e, #d62976 55%, #962fbf); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .wordmark__text small { font-size: .62em; font-weight: 600; color: var(--muted); letter-spacing: .04em; margin-inline-start: .2em; }
-.otp { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; direction: ltr; }
-.otp input { height: 60px; text-align: center; font: 500 26px var(--f-num); border-radius: 16px; border: 1px solid var(--line-2); background: var(--sunken); color: var(--ink); }
+.otp { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; direction: ltr; width: 100%; max-width: 420px; margin-inline: auto; }
+.otp input { width: 100%; min-width: 0; aspect-ratio: 1 / 1.15; height: auto; max-height: 64px; padding: 0; text-align: center; font: 500 26px var(--f-num); border-radius: 16px; border: 1px solid var(--line-2); background: var(--sunken); color: var(--ink); }
 .otp input:focus { outline: none; border-color: var(--highlight); box-shadow: 0 0 0 3px color-mix(in srgb, var(--highlight) 30%, transparent); }
 .auth__err { min-height: 1.4em; color: var(--bad); font-size: 13.5px; margin-top: -6px; }
 .auth__links { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -652,7 +655,7 @@ kbd { font: 500 11px var(--f-num); border: 1px solid var(--line-2); border-radiu
   .hide-sm { display: none !important; }
   .drawer__body { padding: 18px 16px 60px; }
   .dayline { grid-template-columns: 56px minmax(0, 1fr); }
-  .dayline__ev { inset-inline-start: 62px; }
+  .dayline { --dl-off: 62px; }
   .dayline__now { inset-inline-start: 56px; }
   .dayline__hour b { font-size: 22px; }
   .day-head b { font-size: 48px; }
