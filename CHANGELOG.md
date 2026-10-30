@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — 2026-10-30
+
+- Installable app: manifest with maskable icons and shortcuts (contacts, schedule, tasks, inbox), iPhone full-screen metas and safe-area padding; «التطبيق على جهازك» card in Preferences with an install button (Chrome, Edge, Android) or the Safari steps on iPhone.
+- Offline: the service worker precaches every file of the build; the last loaded data is kept on the device (cleared on sign-out) so the app opens read-only without a connection.
+- Updates: a new version waits and the app shows «فيه نسخة جديدة · حدّث» instead of swapping files under an open page; it checks every 30 minutes.
+
 ## 1.2.0 — 2026-10-30
 
 - Files on Google Drive: upload (drag and drop, progress, 20 MB, PDF, images, Office, ZIP), in-app preview of images and PDFs, delete to the Drive bin. Files live on the Drive account with the space through a separate «Magmafy Files» script (`backend/files/Files.gs`), reached with signed 10-minute tickets; new sheet tab «الملفات».

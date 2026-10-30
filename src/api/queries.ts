@@ -2,6 +2,8 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClie
 import { api } from './endpoints';
 import type { Bootstrap, Lead, Task, Booking, LeadDetail } from './schemas';
 import { useVisible } from '../lib/hooks';
+import { store } from '../lib/storage';
+import { session } from './client';
 
 export const qk = {
   boot: ['boot'] as const,
@@ -20,9 +22,29 @@ export const qk = {
 };
 
 /* ---------- reads ---------- */
+/**
+ * The signed-in snapshot. The last good copy is kept on this device so the installed app opens with data
+ * when there's no connection (read-only until it's back). Signing out removes it (session.clear).
+ */
+const OFFLINE_KEY = 'mg-crm-offline';
+function offlineCopy(): Bootstrap | undefined {
+  const c = store.json<{ token: string; d: Bootstrap } | null>(OFFLINE_KEY, null);
+  return c && c.token === session.token ? c.d : undefined;
+}
 export function useBootstrap() {
   const visible = useVisible();
-  return useQuery({ queryKey: qk.boot, queryFn: api.bootstrap, refetchInterval: visible ? 120_000 : false, staleTime: 30_000 });
+  return useQuery({
+    queryKey: qk.boot,
+    queryFn: async () => {
+      const d = await api.bootstrap();
+      store.setJson(OFFLINE_KEY, { token: session.token, d });
+      return d;
+    },
+    initialData: offlineCopy,
+    initialDataUpdatedAt: 0, // always refetch on open; the copy only fills the gap
+    refetchInterval: visible ? 120_000 : false,
+    staleTime: 30_000
+  });
 }
 export function useLead(id: string | null) {
   return useQuery({ queryKey: qk.lead(id || ''), queryFn: () => api.lead(id!), enabled: !!id });

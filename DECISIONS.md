@@ -12,3 +12,5 @@ Short records of choices made while building, and why.
 8. **All times are Riyadh (UTC+3)** regardless of device timezone, matching the sheet.
 9. **Session token in localStorage, short-lived, server-validated.** The OTP flow (`crmRequestCode` → `crmVerifyCode`) is used, with no passwords. The token is revoked by `crmLogout` and expires server-side.
 10. **Notifications and chat poll; no push.** Apps Script can't hold a socket, so the site polls `crmPulse`, which is cached per person and invalidated whenever something changes for them (`bump_`). That keeps sheet reads low.
+11. **Service worker updates wait for the user.** A new version is precached but not activated until «حدّث» (or every tab closes): GitHub Pages removes the old hashed files on deploy, so swapping workers under an open page could break lazy-loaded screens. First install never reloads the page.
+12. **Offline data is the last bootstrap only, tied to the session token.** Enough to open the app and read; writes need a connection. `session.clear()` deletes it on sign-out.

@@ -14,6 +14,7 @@ import { config } from './config';
 import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/base.css';
+import './lib/install'; // catches the browser's install prompt as early as possible
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -54,6 +55,22 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );
 
+// Installed app / offline. A new version waits; the shell shows «حدّث» (event mg-update) and applies it on tap.
 if ('serviceWorker' in navigator && import.meta.env.PROD && !config.mock) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register(config.basePath + 'sw.js').catch(() => {}); });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(config.basePath + 'sw.js').then((reg) => {
+      const ready = () => window.dispatchEvent(new Event('mg-update'));
+      if (reg.waiting && navigator.serviceWorker.controller) ready();
+      reg.addEventListener('updatefound', () => {
+        const w = reg.installing;
+        w?.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) ready(); });
+      });
+      // An installed app can stay open for days: look for a new version every 30 minutes.
+      setInterval(() => { reg.update().catch(() => {}); }, 30 * 60000);
+    }).catch(() => {});
+  });
+  // Reload only when an update replaces a running version (after «حدّث»), never on the very first install.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloading) { reloading = true; location.reload(); } });
 }

@@ -11,6 +11,7 @@ import { ago, fDT } from '../../lib/format';
 import { download, toCsv } from '../../lib/rules';
 import { dayKey } from '../../lib/time';
 import { store } from '../../lib/storage';
+import { useInstall } from '../../lib/install';
 import { Avatar, Empty, Field, IconButton, Seg, Select, Skel } from '../../components/ui';
 import { Icon } from '../../components/Icon';
 import { Modal, useConfirm, useToast } from '../../components/overlay';
@@ -83,6 +84,49 @@ function EmailPrefs() {
   );
 }
 
+function InstallCard() {
+  const { t, lang } = useI18n();
+  const toast = useToast();
+  const app = useInstall();
+  return (
+    <section className="card c12">
+      <div className="row" style={{ gap: 14, alignItems: 'flex-start' }}>
+        <img src={import.meta.env.BASE_URL + 'icon-192.png'} alt="" width={52} height={52} style={{ borderRadius: 14, flexShrink: 0 }} />
+        <div className="grow">
+          <h3 style={{ margin: '0 0 4px' }}>{t('التطبيق على جهازك', 'The app on your device')}</h3>
+          {app.installed ? (
+            <p className="hint" style={{ margin: 0 }}>{t('إنت فاتح الـ CRM كتطبيق متثبت ✓ بيفتح من أيقونته على الشاشة الرئيسية، وبيعرض آخر بيانات اتحملت لو النت قطع.', 'You’re using the installed app ✓ It opens from its home-screen icon and shows the last loaded data when offline.')}</p>
+          ) : app.canPrompt ? (
+            <>
+              <p className="hint" style={{ margin: '0 0 12px' }}>{t('ثبّت الـ CRM كتطبيق: أيقونة على الشاشة الرئيسية، بيفتح من غير شريط المتصفح، وبيشتغل لو النت قطع.', 'Install the CRM as an app: a home-screen icon, no browser bar, and it opens offline.')}</p>
+              <button className="btn btn--grad" onClick={async () => { if (await app.prompt()) toast(t('اتثبت ✓', 'Installed ✓')); }}><Icon name="download" />{t('ثبّت التطبيق', 'Install the app')}</button>
+            </>
+          ) : app.platform === 'ios' ? (
+            <>
+              <p className="hint" style={{ margin: 0 }}>{t('على الآيفون والآيباد التثبيت من Safari:', 'On iPhone and iPad, install from Safari:')}</p>
+              <ol className="install-steps">
+                <li>{t('افتح الموقع في ', 'Open the site in ')}<b>Safari</b></li>
+                <li>{t('دوس زرار المشاركة ', 'Tap the Share button ')}<b>⬆︎</b>{t(' تحت', ' at the bottom')}</li>
+                <li>{t('اختار ', 'Choose ')}<b>{t('«إضافة إلى الشاشة الرئيسية»', '“Add to Home Screen”')}</b>{lang === 'ar' ? <> <bdi className="faint">(Add to Home Screen)</bdi></> : null}</li>
+                <li>{t('دوس ', 'Tap ')}<b>{t('إضافة', 'Add')}</b>{lang === 'ar' ? <> <bdi className="faint">(Add)</bdi></> : null}</li>
+              </ol>
+            </>
+          ) : (
+            <>
+              <p className="hint" style={{ margin: 0 }}>{t('لو زرار التثبيت مش ظاهر:', 'If there’s no install button:')}</p>
+              <ol className="install-steps">
+                {app.platform === 'android'
+                  ? <><li>{t('افتح قايمة المتصفح ', 'Open the browser menu ')}<b>⋮</b></li><li>{t('اختار ', 'Choose ')}<b>{t('«تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»', '“Install app” or “Add to Home screen”')}</b></li></>
+                  : <><li>{t('في Chrome أو Edge دوس أيقونة التثبيت ', 'In Chrome or Edge, click the install icon ')}<b>⊕</b>{t(' في آخر شريط العنوان', ' at the end of the address bar')}</li><li>{t('أو من القايمة ', 'or from the menu ')}<b>⋮</b>{t(' ← «تثبيت Magmafy CRM»', ' → “Install Magmafy CRM”')}</li></>}
+              </ol>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function Preferences() {
   const { t, lang, setLang } = useI18n();
   const { pref, setPref, motion, setMotion } = useTheme();
@@ -91,6 +135,7 @@ export function Preferences() {
   const [start, setStart] = useState(() => store.get('mg-crm-start') || '/');
   return (
     <div className="grid-12">
+      <InstallCard />
       <section className="card c6"><h3 style={{ marginBottom: 16 }}>{t('الشكل', 'Appearance')}</h3>
         <div className="stack">
           <div className="field">{t('المظهر', 'Theme')}<Seg value={pref} onChange={setPref} label={t('المظهر', 'Theme')} options={[['dark', t('غامق', 'Dark')], ['light', t('فاتح', 'Light')], ['auto', t('حسب الجهاز', 'System')]]} /></div>

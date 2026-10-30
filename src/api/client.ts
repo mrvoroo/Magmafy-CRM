@@ -10,7 +10,8 @@ const authListeners = new Set<() => void>();
 export const session = {
   get token() { return token; },
   set(t: string) { token = t; store.set(TOKEN_KEY, t); },
-  clear() { token = ''; store.del(TOKEN_KEY); },
+  // Signing out also forgets the offline copy of the data (see useBootstrap).
+  clear() { token = ''; store.del(TOKEN_KEY); store.del('mg-crm-offline'); },
   onLost(fn: () => void) { authListeners.add(fn); return () => { authListeners.delete(fn); }; }
 };
 

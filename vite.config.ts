@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { copyFileSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 
@@ -33,6 +33,16 @@ function prodHtml(): Plugin {
     closeBundle() {
       const dist = resolve(__dirname, 'dist');
       if (existsSync(dist + '/index.html')) copyFileSync(dist + '/index.html', dist + '/404.html');
+      // The service worker learns this build's files (for offline) and a version (so updates are detected).
+      const sw = dist + '/sw.js';
+      if (existsSync(sw)) {
+        const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(dir + '/' + d.name) : [dir + '/' + d.name]));
+        const files = walk(dist).map((f) => f.slice(dist.length + 1))
+          .filter((f) => !/^(sw\.js|404\.html|index\.html|robots\.txt|og-wordmark\.jpg|icon-512\.png|icon-maskable-512\.png)$/.test(f));
+        const version = createHash('sha256').update(files.join('|')).digest('hex').slice(0, 10);
+        const src = readFileSync(sw, 'utf8').replace("'__BUILD__'", JSON.stringify(version)).replace('[/*__PRECACHE__*/]', JSON.stringify(files.map((f) => './' + f)));
+        writeFileSync(sw, src);
+      }
     }
   };
 }

@@ -58,6 +58,9 @@ function ShellFrame({ boot, refreshing, onRefresh }: { boot: Bootstrap; refreshi
   const [params, setParams] = useSearchParams();
   const pulse = usePulse(authed);
   const online = useOnline();
+  // A new version of the site is downloaded and waiting (see main.tsx).
+  const [update, setUpdate] = useState(false);
+  useEffect(() => { const on = () => setUpdate(true); window.addEventListener('mg-update', on); return () => window.removeEventListener('mg-update', on); }, []);
   const [cmdk, setCmdk] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const me = boot.me;
@@ -160,6 +163,10 @@ function ShellFrame({ boot, refreshing, onRefresh }: { boot: Bootstrap; refreshi
 
         <div className="shell__banner">
           {!online ? <div className="banner banner--عاجل" role="alert"><span className="pulse-dot" />{t('مفيش نت دلوقتي. البيانات اللي قدامك للقراية بس لحد ما النت يرجع.', 'You’re offline. What you see is read-only until you’re back online.')}</div> : null}
+          {update ? (
+            <div className="banner" role="status"><Icon name="sparkle" size={16} /><span className="grow">{t('فيه نسخة جديدة من الموقع.', 'A new version is available.')}</span>
+              <button className="btn btn--sm btn--primary btn--plain" onClick={() => { navigator.serviceWorker?.getRegistration().then((r) => (r?.waiting ? r.waiting.postMessage('skip') : location.reload())); }}>{t('حدّث', 'Update')}</button></div>
+          ) : null}
           <AnnouncementBanner boot={boot} />
         </div>
 
