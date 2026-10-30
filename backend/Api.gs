@@ -1045,6 +1045,8 @@ let PUSH_NOW_ = {}; // email → true: people to wake at the end of this request
 const PUSH_HOSTS_ = /^https:\/\/([a-z0-9-]+\.)*(fcm\.googleapis\.com|push\.apple\.com|push\.services\.mozilla\.com|notify\.windows\.com)\//i;
 
 // --- P-256 / ES256 with BigInt (Apps Script has no ECDSA) -------------------------------------------
+// Apps Script's editor rejects BigInt literals (0n), so the small numbers are made once here.
+const N0_ = BigInt(0), N1_ = BigInt(1), N2_ = BigInt(2), N3_ = BigInt(3), N4_ = BigInt(4), N8_ = BigInt(8);
 const EC_ = (() => {
   const B = (h) => BigInt('0x' + h);
   return {
@@ -1055,34 +1057,34 @@ const EC_ = (() => {
     gy: B('4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5')
   };
 })();
-function ecMod_(a, m) { const r = a % m; return r < 0n ? r + m : r; }
-function ecPow_(b, e, m) { let r = 1n; b = ecMod_(b, m); while (e > 0n) { if (e & 1n) r = (r * b) % m; b = (b * b) % m; e >>= 1n; } return r; }
-function ecInv_(a, m) { return ecPow_(a, m - 2n, m); }
+function ecMod_(a, m) { const r = a % m; return r < N0_ ? r + m : r; }
+function ecPow_(b, e, m) { let r = N1_; b = ecMod_(b, m); while (e > N0_) { if (e & N1_) r = (r * b) % m; b = (b * b) % m; e >>= N1_; } return r; }
+function ecInv_(a, m) { return ecPow_(a, m - N2_, m); }
 /** Jacobian point doubling and addition on y² = x³ - 3x + b. A point is [X, Y, Z]; Z = 0 is infinity. */
 function ecDouble_(P) {
   const p = EC_.p, X = P[0], Y = P[1], Z = P[2];
-  if (Z === 0n || Y === 0n) return [0n, 1n, 0n];
-  const YY = (Y * Y) % p, S = (4n * X * YY) % p, ZZ = (Z * Z) % p;
-  const M = (3n * (X - ZZ) * (X + ZZ)) % p;
-  const X3 = ecMod_(M * M - 2n * S, p);
-  return [X3, ecMod_(M * (S - X3) - 8n * YY * YY, p), ecMod_(2n * Y * Z, p)];
+  if (Z === N0_ || Y === N0_) return [N0_, N1_, N0_];
+  const YY = (Y * Y) % p, S = (N4_ * X * YY) % p, ZZ = (Z * Z) % p;
+  const M = (N3_ * (X - ZZ) * (X + ZZ)) % p;
+  const X3 = ecMod_(M * M - N2_ * S, p);
+  return [X3, ecMod_(M * (S - X3) - N8_ * YY * YY, p), ecMod_(N2_ * Y * Z, p)];
 }
 function ecAdd_(P, Q) {
   const p = EC_.p;
-  if (P[2] === 0n) return Q;
-  if (Q[2] === 0n) return P;
+  if (P[2] === N0_) return Q;
+  if (Q[2] === N0_) return P;
   const Z1Z1 = (P[2] * P[2]) % p, Z2Z2 = (Q[2] * Q[2]) % p;
   const U1 = (P[0] * Z2Z2) % p, U2 = (Q[0] * Z1Z1) % p;
   const S1 = (P[1] * Q[2] * Z2Z2) % p, S2 = (Q[1] * P[2] * Z1Z1) % p;
-  if (U1 === U2) return S1 === S2 ? ecDouble_(P) : [0n, 1n, 0n];
+  if (U1 === U2) return S1 === S2 ? ecDouble_(P) : [N0_, N1_, N0_];
   const H = ecMod_(U2 - U1, p), R = ecMod_(S2 - S1, p), HH = (H * H) % p, HHH = (H * HH) % p, V = (U1 * HH) % p;
-  const X3 = ecMod_(R * R - HHH - 2n * V, p);
+  const X3 = ecMod_(R * R - HHH - N2_ * V, p);
   return [X3, ecMod_(R * (V - X3) - S1 * HHH, p), (P[2] * Q[2] * H) % p];
 }
 /** k·G in affine coordinates [x, y]. */
 function ecMulG_(k) {
-  let R = [0n, 1n, 0n], A = [EC_.gx, EC_.gy, 1n];
-  while (k > 0n) { if (k & 1n) R = ecAdd_(R, A); A = ecDouble_(A); k >>= 1n; }
+  let R = [N0_, N1_, N0_], A = [EC_.gx, EC_.gy, N1_];
+  while (k > N0_) { if (k & N1_) R = ecAdd_(R, A); A = ecDouble_(A); k >>= N1_; }
   const zi = ecInv_(R[2], EC_.p), zi2 = (zi * zi) % EC_.p;
   return [(R[0] * zi2) % EC_.p, (R[1] * zi2 * zi) % EC_.p];
 }
@@ -1094,7 +1096,7 @@ function sha256Bytes_(v) { return typeof v === 'string' ? Utilities.computeDiges
 function ecRandom_(extra) {
   for (;;) {
     const k = bytesToBig_(sha256Bytes_(Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid() + (extra || '')));
-    if (k > 0n && k < EC_.n) return k;
+    if (k > N0_ && k < EC_.n) return k;
   }
 }
 /** ES256 signature (raw r‖s, 64 bytes) of a UTF-8 string with private key d. */
@@ -1103,9 +1105,9 @@ function es256Sign_(text, d) {
   for (;;) {
     const k = ecRandom_(d.toString(16) + text);
     const r = ecMod_(ecMulG_(k)[0], EC_.n);
-    if (r === 0n) continue;
+    if (r === N0_) continue;
     const s = ecMod_(ecInv_(k, EC_.n) * (e + r * d), EC_.n);
-    if (s === 0n) continue;
+    if (s === N0_) continue;
     return bigToBytes_(r, 32).concat(bigToBytes_(s, 32));
   }
 }
