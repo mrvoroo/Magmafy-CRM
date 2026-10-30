@@ -135,11 +135,13 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
   let anchorFit = 2.2;
 
   let vw = 1, vh = 1;
+  let last: Scene | null = null;
   function resize() {
     vw = window.innerWidth; vh = window.innerHeight;
     renderer.setSize(vw, vh, false);
     camera.aspect = vw / vh;
     camera.updateProjectionMatrix();
+    if (last) place(last);
     if (opts.reduced) render();
   }
   resize();
@@ -159,6 +161,33 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
     goal.y = ndcY * HALF_H - SHAPE_CY * scale;
     goal.scale = scale;
     goal.size = baseSize * Math.max(0.8, Math.min(1, scale * 1.8));
+  }
+
+  /** Where a scene sits. Phones: every shape centred behind the content, sized to the screen width. */
+  function place(s: Scene) {
+    const narrow = vw < 760;
+    const r = s.anchor?.getBoundingClientRect();
+    anchor = s.anchor && r && r.width > 0 && r.height > 0 ? s.anchor : null;
+    anchorFit = s.anchorFit || 2.2;
+    if (anchor) return;
+    const sc = s.scale ?? 1;
+    if (narrow) {
+      const fit = (2 * HALF_H * camera.aspect * 0.92) / 5.4; // the widest shapes are ~5.4 units across
+      const k = Math.min(fit, 1.15);
+      goal.x = 0;
+      goal.y = HALF_H * 0.12 - SHAPE_CY * k;
+      goal.scale = k;
+      goal.size = baseSize;
+      return;
+    }
+    if (s.corner === 'end-bottom') {
+      // A small shape tucked in the end-bottom corner (mirrors with the page direction).
+      const rtl = document.documentElement.dir === 'rtl';
+      goal.x = (rtl ? -1 : 1) * (HALF_H * camera.aspect - 1.9 * sc);
+      goal.y = -HALF_H + 2.2 * sc;
+    } else { goal.x = s.x ?? 0; goal.y = s.y ?? 0; }
+    goal.scale = sc;
+    goal.size = baseSize;
   }
 
   function retarget(next: Float32Array) {
@@ -241,19 +270,8 @@ export function createWorld(canvas: HTMLCanvasElement, opts: { reduced: boolean;
     setDimmed(d) { dimmed = d; },
     morph(s) {
       if (shapes[s.shape] && shapes[s.shape] !== target) retarget(shapes[s.shape]);
-      anchor = s.anchor || null;
-      anchorFit = s.anchorFit || 2.2;
-      if (!anchor) {
-        const sc = s.scale ?? 1;
-        if (s.corner === 'end-bottom') {
-          // A small shape tucked in the end-bottom corner (mirrors with the page direction).
-          const rtl = document.documentElement.dir === 'rtl';
-          goal.x = (rtl ? -1 : 1) * (HALF_H * camera.aspect - 1.9 * sc);
-          goal.y = -HALF_H + 2.2 * sc;
-        } else { goal.x = s.x ?? 0; goal.y = s.y ?? 0; }
-        goal.scale = sc;
-        goal.size = baseSize;
-      }
+      last = s;
+      place(s);
       goal.opacity = s.opacity ?? 0.9;
       if (opts.reduced) {
         if (anchor) fitTo(anchor);
